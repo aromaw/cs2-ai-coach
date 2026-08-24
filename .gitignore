@@ -1,13 +1,22 @@
-node_modules/
-npm-debug.log*
-bin/
-.cache/
-
-data/uploads/*
-data/reports/*
-data/feedback/*
-!data/uploads/.gitkeep
-!data/reports/.gitkeep
-!data/feedback/.gitkeep
-
+node_modules
+dist
 .DS_Store
+# Environment variables
+.env
+.env.local
+.env.*.local
+# Database
+*.db
+*.sqlite
+*.sqlite3
+db/migrations/*.sql
+# TypeScript cache
+*.tsbuildinfo
+# Build outputs
+dist/
+build/
+# Test coverage
+coverage/
+.nyc_output/
+# Logs
+*.log

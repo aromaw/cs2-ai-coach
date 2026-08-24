@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- geometric R built from tactical crosshair lines -->
+  <g stroke="#C8FF3D" stroke-width="3.5" stroke-linecap="square" filter="url(#glow)">
+    <!-- stem -->
+    <line x1="18" y1="10" x2="18" y2="54"/>
+    <!-- bowl -->
+    <path d="M18 12 H38 A10.5 10.5 0 0 1 38 33 H18"/>
+    <!-- leg -->
+    <line x1="30" y1="33" x2="47" y2="54"/>
+  </g>
+  <!-- crosshair ticks -->
+  <g stroke="#C8FF3D" stroke-width="2" opacity="0.85">
+    <line x1="10" y1="32" x2="15" y2="32"/>
+    <line x1="49" y1="12" x2="54" y2="12"/>
+    <line x1="47" y1="46" x2="47" y2="41"/>
+    <line x1="18" y1="4" x2="18" y2="8"/>
+  </g>
+  <circle cx="38" cy="22.5" r="2.2" fill="#C8FF3D"/>
+</svg>

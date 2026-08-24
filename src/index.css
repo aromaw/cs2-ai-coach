@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn tokens mapped to RETAKE dark palette (dark theme is the only theme) */
+    --background: 222 32% 4%;          /* #080B10 */
+    --foreground: 210 33% 95%;         /* #EDF2F7 */
+    --card: 216 29% 7%;                /* #0D1117 */
+    --card-foreground: 210 33% 95%;
+    --popover: 218 29% 15%;            /* #1A2332 */
+    --popover-foreground: 210 33% 95%;
+    --primary: 80 100% 62%;            /* #C8FF3D */
+    --primary-foreground: 222 32% 4%;
+    --secondary: 218 29% 15%;
+    --secondary-foreground: 210 33% 95%;
+    --muted: 218 29% 15%;
+    --muted-foreground: 214 20% 60%;   /* #94A3B8 */
+    --accent: 218 29% 15%;
+    --accent-foreground: 210 33% 95%;
+    --destructive: 0 100% 66%;         /* #FF5252 */
+    --destructive-foreground: 210 33% 95%;
+    --border: 216 31% 17%;             /* #1E2A3A */
+    --input: 216 31% 17%;
+    --ring: 80 100% 62%;
+    --radius: 0.5rem;
+    --sidebar-background: 216 29% 7%;
+    --sidebar-foreground: 210 33% 95%;
+    --sidebar-primary: 80 100% 62%;
+    --sidebar-primary-foreground: 222 32% 4%;
+    --sidebar-accent: 218 29% 15%;
+    --sidebar-accent-foreground: 210 33% 95%;
+    --sidebar-border: 216 31% 17%;
+    --sidebar-ring: 80 100% 62%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-board-0 text-ink-1 font-sans antialiased;
+  }
+  ::selection {
+    background: rgba(200, 255, 61, 0.25);
+  }
+}
+
+@layer utilities {
+  /* V2 战术板网格纹理（design-v2 §3） */
+  .bg-board {
+    background-color: #0A0D10;
+    background-image:
+      linear-gradient(rgba(24, 32, 40, 0.55) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(24, 32, 40, 0.55) 1px, transparent 1px),
+      linear-gradient(rgba(24, 32, 40, 0.9) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(24, 32, 40, 0.9) 1px, transparent 1px);
+    background-size: 28px 28px, 28px 28px, 140px 140px, 140px 140px;
+  }
+  /* 板面微光：仅 Hero / coach 报告头 */
+  .board-glow {
+    background-image: radial-gradient(900px 500px at 50% -10%, rgba(200, 255, 61, 0.045), transparent 60%);
+  }
+  /* 荧光笔迹发光 */
+  .mark-glow {
+    filter: drop-shadow(0 0 5px rgba(200, 255, 61, 0.35));
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+  .card-toplight {
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 40%);
+  }
+  .hero-glow {
+    background-image: radial-gradient(1200px 600px at 70% 20%, rgba(200, 255, 61, 0.07), transparent 60%);
+  }
+}
