@@ -266,6 +266,10 @@ export function buildMockMatch(): AnalysisResult {
         persona.fk + persona.fd
           ? Math.round((persona.fk / (persona.fk + persona.fd)) * 1000) / 10
           : 0,
+      tradeKills: Math.max(1, Math.round(persona.fk * 0.8)),
+      tradedDeaths: Math.max(1, Math.round(persona.fd * 0.7)),
+      postPlantRounds: persona.clutchA + 2,
+      postPlantSurvivalRounds: persona.clutchA,
       clutchAttempts: persona.clutchA,
       clutchWins: persona.clutchW,
       multiKillRounds: kpr.filter((c) => c >= 2).length,
@@ -455,6 +459,7 @@ export function buildMockMatch(): AnalysisResult {
     utility,
     coach,
     economy,
+    evidence: [],
   };
 }
 

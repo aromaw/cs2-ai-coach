@@ -53,7 +53,7 @@ export default function Rounds() {
 
   return (
     <div>
-      <MatchHeader match={data.match} />
+      <MatchHeader match={data.match} players={data.players} />
       <div className="mx-auto max-w-[1360px] px-6 md:px-10">
         {isFallback && (
           <p className="mt-6 font-mono text-[11px] text-warn">

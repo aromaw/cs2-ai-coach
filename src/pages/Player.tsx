@@ -3,6 +3,7 @@
 import { useParams, Link } from "react-router";
 import { motion } from "framer-motion";
 import { useMatchData } from "@/lib/match-data";
+import { useHero } from "@/lib/hero";
 import MatchHeader from "@/components/match/MatchHeader";
 import SectionHeader from "@/components/board/SectionHeader";
 import BigStat from "@/components/board/BigStat";
@@ -62,10 +63,15 @@ function ShortfallStat({ value, reference }: { value: number; reference: string 
 export default function Player() {
   const { id, pid } = useParams();
   const { data, isLoading, isFallback } = useMatchData(id);
+  const hero = useHero(data?.match.id, data?.players ?? []);
 
   if (isLoading || !data) return <PlayerSkeleton />;
 
-  const { player, isDefault } = resolvePlayer(data.players, pid);
+  const { player, isDefault } = resolvePlayer(
+    data.players,
+    pid,
+    hero.effective?.name,
+  );
   if (!player) return <PlayerSkeleton />;
 
   const matchId = String(data.match.id);
@@ -104,7 +110,7 @@ export default function Player() {
 
   return (
     <div>
-      <MatchHeader match={data.match} />
+      <MatchHeader match={data.match} players={data.players} />
       <PlayerSwitcher players={data.players} matchId={matchId} currentName={player.name} />
 
       {isFallback && (

@@ -1,6 +1,5 @@
 // V2 比赛总览 /match/:id — 战术指挥室风（design-v2 overview.md）
 // 三分区：S1 赛果板（巨型比分）→ S2 记分板（共享 Scoreboard，MVP 荧光圈）→ S3 团队对比
-import { useMemo } from "react";
 import { useParams } from "react-router";
 import { motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +12,7 @@ import ScorePanel from "@/components/overview/ScorePanel";
 import TeamCompare from "@/components/overview/TeamCompare";
 import { teamAgg } from "@/components/overview/derive";
 import { useMatchData } from "@/lib/match-data";
+import { useHero } from "@/lib/hero";
 
 /** 通栏发丝线分隔；页面级大分区之间可在线中点压一枚准星（一页 ≤2 个） */
 function SectionDivider({ cross = false }: { cross?: boolean }) {
@@ -94,13 +94,9 @@ export default function Overview() {
   const { id } = useParams<{ id: string }>();
   const { data, isLoading, isFallback } = useMatchData(id);
 
-  // 主角玩家（"你"）：设计约定为 s1mple丶Fan，缺失时取 Rating 最高者
-  const heroName = useMemo(() => {
-    if (!data) return undefined;
-    const byName = data.players.find((p) => p.name === "s1mple丶Fan");
-    if (byName) return byName.name;
-    return [...data.players].sort((a, b) => b.rating - a.rating)[0]?.name;
-  }, [data]);
+  // 主角玩家（"你"）：由上传者在头部选择器指定，未选择时回退 Rating 最高者
+  const hero = useHero(data?.match.id, data?.players ?? []);
+  const heroName = hero.effective?.name;
 
   if (isLoading || !data) return <OverviewSkeleton />;
 
@@ -111,7 +107,7 @@ export default function Overview() {
 
   return (
     <div>
-      <MatchHeader match={data.match} />
+      <MatchHeader match={data.match} players={data.players} />
 
       <motion.div
         initial={{ opacity: 0 }}

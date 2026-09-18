@@ -10,6 +10,7 @@ import ReadoutPanel from "@/components/tactics/ReadoutPanel";
 import type { PlayerScope } from "@/components/tactics/ReadoutPanel";
 import UtilityRow from "@/components/tactics/UtilityRow";
 import { useMatchData } from "@/lib/match-data";
+import { useHero } from "@/lib/hero";
 
 function TacticsSkeleton() {
   return (
@@ -46,14 +47,15 @@ export default function Tactics() {
     [roundsTotal, selectedRange],
   );
 
-  // 主角玩家（"你"）：设计约定 s1mple丶Fan，缺失时取评分最高者
-  const hero = useMemo(() => {
-    if (!data) return { name: "", side: "T" as const };
-    const byName = data.players.find((p) => p.name === "s1mple丶Fan");
-    const h =
-      byName ?? [...data.players].sort((a, b) => b.rating - a.rating)[0];
-    return { name: h?.name ?? "", side: h?.startSide ?? ("T" as const) };
-  }, [data]);
+  // 主角玩家（"你"）：由上传者在头部选择器指定，未选择时回退评分最高者
+  const heroState = useHero(data?.match.id, data?.players ?? []);
+  const hero = useMemo(
+    () => ({
+      name: heroState.effective?.name ?? "",
+      side: heroState.effective?.startSide ?? ("T" as const),
+    }),
+    [heroState.effective],
+  );
 
   // 按读数面板 scope 过滤点位（我方 = 与"你"同阵营）
   const scopedHeat = useMemo(() => {
@@ -68,7 +70,7 @@ export default function Tactics() {
 
   return (
     <div>
-      <MatchHeader match={data.match} />
+      <MatchHeader match={data.match} players={data.players} />
       <div className="mx-auto max-w-[1360px] px-6 md:px-10">
         {isFallback && (
           <p className="mt-6 font-mono text-[11px] text-warn">

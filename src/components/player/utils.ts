@@ -24,12 +24,15 @@ export function pickDefaultPlayer(players: PlayerStat[]): PlayerStat | undefined
   );
 }
 
-/** 解析选中的选手：按 name 匹配 pid，失败回退默认主角 */
+/** 解析选中的选手：按 name 匹配 pid，失败回退上传者指定的主角（再回退默认） */
 export function resolvePlayer(
   players: PlayerStat[],
   pid: string | undefined,
+  heroName?: string,
 ): { player: PlayerStat | undefined; isDefault: boolean } {
-  const fallback = pickDefaultPlayer(players);
+  const fallback =
+    (heroName ? players.find((p) => p.name === heroName) : undefined) ??
+    pickDefaultPlayer(players);
   if (!pid || pid === "me") return { player: fallback, isDefault: true };
   const found = players.find((p) => p.name === pid);
   if (found) return { player: found, isDefault: found === fallback };

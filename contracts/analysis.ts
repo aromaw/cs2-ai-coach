@@ -18,6 +18,13 @@ export interface PlayerStat {
   firstKills: number;
   firstDeaths: number;
   openingDuelWinRate: number; // 0-100
+  /** 5 秒内为队友完成补枪的次数 */
+  tradeKills: number;
+  /** 自己死亡后 5 秒内被队友补枪的次数 */
+  tradedDeaths: number;
+  /** 下包时存活且活到最后的人数统计分母/分子见 evidence */
+  postPlantRounds: number;
+  postPlantSurvivalRounds: number;
   clutchAttempts: number;
   clutchWins: number;
   multiKillRounds: number; // 2杀及以上回合数
@@ -113,6 +120,25 @@ export interface MatchInfo {
   fileName?: string;
 }
 
+/** 坏习惯/问题证据（由真实事件推导，逐条可核对） */
+export interface EvidenceItem {
+  id: string;
+  /** 玩家 steamid（用于按人筛选） */
+  playerId: string;
+  playerName: string;
+  round: number;
+  /** 回合内秒数 */
+  t: number;
+  location: string;
+  /** 机器可读的 issue 名 */
+  issue: string;
+  /** 中文标签 */
+  label: string;
+  description: string;
+  severity: "high" | "mid" | "low";
+  side?: Side;
+}
+
 export interface AnalysisResult {
   match: MatchInfo;
   players: PlayerStat[];
@@ -122,6 +148,8 @@ export interface AnalysisResult {
   coach: CoachAdvice[];
   /** 逐回合双方经济曲线 */
   economy: { round: number; valueT: number; valueCT: number }[];
+  /** 坏习惯/问题证据（首死无补枪、队友闪光、经济断层、下包后早死等） */
+  evidence: EvidenceItem[];
 }
 
 export interface MatchSummary {

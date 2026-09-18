@@ -1,9 +1,10 @@
 // V2 MatchHeader（design-v2 §7.2）：单行巨型 mono 比分 + 静态手绘下划线 tab
 import { Link, useLocation } from "react-router";
 import { cn } from "@/lib/utils";
-import type { MatchInfo } from "@contracts/analysis";
+import type { MatchInfo, PlayerStat } from "@contracts/analysis";
 import SideBadge from "./SideBadge";
 import { StaticUnderline } from "@/components/board/Mark";
+import { useHero } from "@/lib/hero";
 
 const TABS = [
   { label: "总览", en: "OVERVIEW", path: "" },
@@ -13,10 +14,17 @@ const TABS = [
   { label: "教练建议", en: "COACH", path: "/coach" },
 ];
 
-export default function MatchHeader({ match }: { match: MatchInfo }) {
+export default function MatchHeader({
+  match,
+  players,
+}: {
+  match: MatchInfo;
+  players?: PlayerStat[];
+}) {
   const loc = useLocation();
   const base = `/match/${match.id}`;
   const current = loc.pathname;
+  const hero = useHero(match.id, players ?? []);
 
   const tWon = match.scoreT > match.scoreCT;
   const ctWon = match.scoreCT > match.scoreT;
@@ -56,8 +64,31 @@ export default function MatchHeader({ match }: { match: MatchInfo }) {
             {match.source === "demo" && " · 示例对局"}
           </div>
         </div>
-        {/* Tab 行 */}
+        {/* Tab 行（右侧："你是谁"选择器） */}
         <nav className="flex h-10 gap-1 border-t border-line/60">
+          {players && players.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3">
+                你
+              </span>
+              <select
+                value={hero.heroName}
+                onChange={(e) => hero.select(e.target.value)}
+                className={cn(
+                  "max-w-[160px] rounded-sm border bg-board-3 px-1.5 py-0.5 font-mono text-[11px] outline-none transition-colors duration-200 hover:border-line-strong",
+                  hero.isAuto ? "border-warning/60 text-warning" : "border-line text-ink-1",
+                )}
+                aria-label="选择你的 ID"
+              >
+                <option value="">自动（未指定）</option>
+                {players.map((p) => (
+                  <option key={p.steamid} value={p.name}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {TABS.map((tab) => {
             const to = `${base}${tab.path}`;
             const isActive =

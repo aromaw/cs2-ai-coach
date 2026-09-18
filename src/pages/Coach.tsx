@@ -4,14 +4,15 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { motion } from "framer-motion";
 import { useMatchData } from "@/lib/match-data";
+import { useHero } from "@/lib/hero";
 import MatchHeader from "@/components/match/MatchHeader";
 import SectionHeader from "@/components/board/SectionHeader";
 import CrossMark from "@/components/board/CrossMark";
 import CoachReport, { type CoachView } from "@/components/coach/CoachReport";
 import AdviceList from "@/components/coach/AdviceList";
+import EvidenceList from "@/components/coach/EvidenceList";
 import TrainingPlan from "@/components/coach/TrainingPlan";
 import {
-  pickDefaultPlayer,
   sortAdvice,
   sortAdviceByEstimate,
   teamAdvice,
@@ -38,10 +39,14 @@ export default function Coach() {
   const [view, setView] = useState<CoachView>("player");
   const [sort, setSort] = useState<SortMode>("severity");
 
-  const player = useMemo(
-    () => (data ? pickDefaultPlayer(data.players) : undefined),
-    [data],
-  );
+  const hero = useHero(data?.match.id, data?.players ?? []);
+  const player = hero.effective;
+  const heroAutoNote = hero.isAuto && player ? (
+    <p className="border-b border-line px-6 py-2 text-center text-xs text-warning">
+      你还未指定自己是哪位选手——当前自动展示 {player.name}
+      （评分最高）。请在顶部选择你的 ID。
+    </p>
+  ) : null;
 
   const lists = useMemo(() => {
     if (!data || !player) return { personal: [], team: [] };
@@ -60,13 +65,14 @@ export default function Coach() {
 
   return (
     <div>
-      <MatchHeader match={data.match} />
+      <MatchHeader match={data.match} players={data.players} />
 
       {isFallback && (
         <p className="border-b border-line px-6 py-2 text-center text-xs text-warning">
           真实数据加载失败，当前展示内置示例对局。
         </p>
       )}
+      {heroAutoNote}
 
       <motion.div
         initial={{ opacity: 0 }}
@@ -105,6 +111,22 @@ export default function Coach() {
               personal={lists.personal}
               team={lists.team}
               matchId={matchId}
+              rounds={data.rounds}
+            />
+          </div>
+        </section>
+
+        {/* S2.5 坏习惯证据 EVIDENCE */}
+        <section className="border-t border-line py-10">
+          <div className="mx-auto max-w-[880px]">
+            <SectionHeader
+              title="坏习惯证据"
+              en="EVIDENCE"
+              note="由真实回合事件推导，每条可核对到回合、时间与位置。"
+            />
+            <EvidenceList
+              evidence={data.evidence}
+              players={data.players}
               rounds={data.rounds}
             />
           </div>
