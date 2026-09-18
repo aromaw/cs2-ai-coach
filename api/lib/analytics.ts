@@ -94,12 +94,9 @@ export function analyzeDemo(
   const ends = raw.roundEvents
     .filter((e) => e.event === "round_end" && !e.isWarmup)
     .sort((a, b) => a.tick - b.tick);
-  const roundsTotal = Math.max(
-    starts.length,
-    ends.length,
-    ...raw.kills.map((k) => k.round),
-    0,
-  );
+  // 回合数以 round_end 为准（与比分一致）；kills 的 round 编号来自
+  // total_rounds_played，在部分服务器上含热身/间隙编号，不能用来定总回合。
+  const roundsTotal = ends.length;
 
   // 回合边界 tick（用于把事件归入回合）
   const startTicks = starts.map((s) => s.tick);

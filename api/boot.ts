@@ -8,6 +8,10 @@ import { env } from "./lib/env";
 
 const app = new Hono<{ Bindings: HttpBindings }>();
 
+app.get("/health", (c) =>
+  c.json({ ok: true, service: "cs2-retake-demo-analyzer" }),
+);
+
 // demo 文件可达 300MB+，放大请求体限制
 app.use(bodyLimit({ maxSize: 512 * 1024 * 1024 }));
 
@@ -24,14 +28,34 @@ app.post("/api/demo/upload", async (c) => {
     if (!(file instanceof File)) {
       return c.json({ error: "缺少 demo 文件（字段名 file）" }, 400);
     }
-    if (!file.name.toLowerCase().endsWith(".dem")) {
-      return c.json({ error: "仅支持 .dem 格式的 CS2 录像文件" }, 400);
+    const lowerName = file.name.toLowerCase();
+    const isZip = lowerName.endsWith(".zip");
+    if (!lowerName.endsWith(".dem") && !isZip) {
+      return c.json({ error: "仅支持 .dem 或 .zip（完美平台下载的 zip 可直接上传）" }, 400);
     }
 
     const dir = path.join(os.tmpdir(), "retake-uploads");
     await mkdir(dir, { recursive: true });
     tmpPath = path.join(dir, `${Date.now()}-${file.name}`);
-    await writeFile(tmpPath, Buffer.from(await file.arrayBuffer()));
+    const uploaded = Buffer.from(await file.arrayBuffer());
+    if (isZip) {
+      await writeFile(tmpPath, uploaded);
+      const { extractDemFromZip, ZipDemError } = await import("./lib/zipDem");
+      let extracted: { buffer: Buffer; entryName: string };
+      try {
+        extracted = extractDemFromZip(tmpPath);
+      } catch (error) {
+        if (error instanceof ZipDemError) {
+          return c.json({ error: error.message }, error.status);
+        }
+        throw error;
+      }
+      const demPath = path.join(dir, `${Date.now()}-extracted.dem`);
+      await writeFile(demPath, extracted.buffer);
+      tmpPath = demPath;
+    } else {
+      await writeFile(tmpPath, uploaded);
+    }
 
     const { parseDemoFile } = await import("./lib/demoParser");
     const { analyzeDemo } = await import("./lib/analytics");
@@ -85,7 +109,8 @@ if (env.isProduction) {
   serveStaticFiles(app);
 
   const port = parseInt(process.env.PORT || "3000");
-  serve({ fetch: app.fetch, port }, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+  const hostname = process.env.HOST || "127.0.0.1";
+  serve({ fetch: app.fetch, port, hostname }, () => {
+    console.log(`Server running on http://${hostname}:${port}/`);
   });
 }

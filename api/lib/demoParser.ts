@@ -246,7 +246,9 @@ export function parseDemoFile(path: string): RawDemoData {
     {},
   );
   const roundEvents: RawRoundEvent[] = roundEventNames.flatMap((ev) =>
-    rowsOf(roundParsed, ev).map((r) => ({
+    rowsOf(roundParsed, ev)
+      .filter((r) => !r.event_name || r.event_name === ev)
+      .map((r) => ({
       tick: Number(r.tick),
       event: ev,
       round:
@@ -283,7 +285,9 @@ export function parseDemoFile(path: string): RawDemoData {
     {},
   );
   const grenadeEvents: RawGrenadeEvent[] = nadeEventNames.flatMap((ev) =>
-    rowsOf(nadeParsed, ev).map((r) => ({
+    rowsOf(nadeParsed, ev)
+      .filter((r) => !r.event_name || r.event_name === ev)
+      .map((r) => ({
       tick: Number(r.tick),
       event: ev,
       round:

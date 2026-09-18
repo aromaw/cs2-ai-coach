@@ -17,6 +17,7 @@ dist/
 build/
 bin/
 .cache/
+data/retake-matches/
 # Test coverage
 coverage/
 .nyc_output/

@@ -170,40 +170,36 @@ fetch_code() {
 }
 
 build_app() {
-  log "Building Go demo parser"
-  ( cd "$APP_DIR" && mkdir -p bin .cache/go-build \
-      && GOCACHE="$APP_DIR/.cache/go-build" /usr/local/bin/go build -buildvcs=false \
-           -o bin/cs2-demoparser ./cmd/demoparser ) \
-    || ( cd "$APP_DIR" && mkdir -p bin .cache/go-build \
-           && GOCACHE="$APP_DIR/.cache/go-build" go build -buildvcs=false \
-                -o bin/cs2-demoparser ./cmd/demoparser )
-  log "Parser built at ${APP_DIR}/bin/cs2-demoparser"
-  # No npm install needed: the server is dependency-free.
+  log "Installing npm dependencies and building the RETAKE app"
+  ( cd "$APP_DIR" && npm ci && npm run build ) \
+    || die "npm ci/build failed"
+  log "Built dist/boot.js (API server) and dist/public (React frontend)"
 }
 
 # ---- systemd service --------------------------------------------------------
 install_service() {
-  local node_bin server_js unit
+  local node_bin boot_js unit
   node_bin="$(command -v node)"
-  server_js="${APP_DIR}/src/server.js"
+  boot_js="${APP_DIR}/dist/boot.js"
   unit="/etc/systemd/system/${SERVICE_NAME}.service"
 
   log "Writing systemd unit ${unit} (user=${RUN_USER}, port=${PORT})"
   {
     echo "[Unit]"
-    echo "Description=CS2 Demo AI Coach"
+    echo "Description=CS2 Demo AI Coach (RETAKE)"
     echo "After=network.target"
     echo ""
     echo "[Service]"
     echo "Type=simple"
     echo "User=${RUN_USER}"
     echo "WorkingDirectory=${APP_DIR}"
-    echo "ExecStart=${node_bin} ${server_js}"
+    echo "ExecStart=${node_bin} ${boot_js}"
+    echo "Environment=NODE_ENV=production"
     echo "Environment=PORT=${PORT}"
     echo "Environment=HOST=${HOST}"
-    echo "Environment=CS2_DEMO_PARSER_REQUIRED=true"
-    [[ -n "$CS2_COACH_AI_BIN" ]]    && echo "Environment=CS2_COACH_AI_BIN=${CS2_COACH_AI_BIN}"
-    [[ -n "$CS2_DEMO_PARSER_BIN" ]] && echo "Environment=CS2_DEMO_PARSER_BIN=${CS2_DEMO_PARSER_BIN}"
+    echo "Environment=APP_ID=local"
+    echo "Environment=APP_SECRET=local"
+    echo "Environment=DATABASE_URL=mysql://local:local@127.0.0.1:3306/local"
     echo "Restart=on-failure"
     echo "RestartSec=3"
     echo "NoNewPrivileges=true"
@@ -227,10 +223,6 @@ main() {
   install_node
 
   fetch_code
-  local want_go
-  want_go="$(required_go_version "${APP_DIR}/go.mod")"
-  install_go "$want_go"
-
   build_app
 
   if have systemctl; then
@@ -244,7 +236,7 @@ main() {
     log "Restart: systemctl restart ${SERVICE_NAME}"
   else
     warn "systemd not available; start the app manually:"
-    echo "  cd ${APP_DIR} && HOST=${HOST} PORT=${PORT} CS2_DEMO_PARSER_REQUIRED=true node src/server.js"
+    echo "  cd ${APP_DIR} && NODE_ENV=production APP_ID=local APP_SECRET=local DATABASE_URL=mysql://local:local@127.0.0.1:3306/local HOST=${HOST} PORT=${PORT} node dist/boot.js"
   fi
 }
 
