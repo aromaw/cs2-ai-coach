@@ -10,6 +10,7 @@ import { reportToMarkdown } from "./markdown.js";
 import { parseDemo } from "./parser.js";
 import { parseUploadedDemo } from "./parserRunner.js";
 import { createId, sanitizeFileName } from "./util.js";
+import { extractDemFromZip, ZipDemError } from "./zipDem.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -64,37 +65,37 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/uploads") {
-      return handleUpload(req, res, url);
+      return await handleUpload(req, res, url);
     }
 
     if (req.method === "POST" && url.pathname === "/api/sample") {
-      return handleSample(res);
+      return await handleSample(res);
     }
 
     if (req.method === "GET" && url.pathname === "/api/reports") {
-      return handleListReports(res);
+      return await handleListReports(res);
     }
 
     if (req.method === "POST" && url.pathname === "/api/reports") {
-      return handleCreateReport(req, res);
+      return await handleCreateReport(req, res);
     }
 
     if (req.method === "POST" && url.pathname === "/api/feedback") {
-      return handleFeedback(req, res);
+      return await handleFeedback(req, res);
     }
 
     const reportExportMatch = url.pathname.match(/^\/api\/reports\/([^/]+)\/export$/);
     if (req.method === "GET" && reportExportMatch) {
-      return handleExportReport(res, reportExportMatch[1]);
+      return await handleExportReport(res, reportExportMatch[1]);
     }
 
     const reportMatch = url.pathname.match(/^\/api\/reports\/([^/]+)$/);
     if (req.method === "GET" && reportMatch) {
-      return handleGetReport(res, reportMatch[1]);
+      return await handleGetReport(res, reportMatch[1]);
     }
 
     if (req.method === "GET" || req.method === "HEAD") {
-      return serveStatic(req, res, url.pathname);
+      return await serveStatic(req, res, url.pathname);
     }
 
     return sendJson(res, 405, { error: "Method not allowed" });
@@ -118,9 +119,11 @@ async function ensureDirectories() {
 async function handleUpload(req, res, url) {
   const uploadStart = Date.now();
   const originalName = sanitizeFileName(req.headers["x-file-name"] || url.searchParams.get("filename") || "upload.dem");
-  if (!originalName.toLowerCase().endsWith(".dem")) {
+  const isZip = originalName.toLowerCase().endsWith(".zip");
+  const isDem = originalName.toLowerCase().endsWith(".dem");
+  if (!isDem && !isZip) {
     drain(req);
-    return sendJson(res, 400, { error: "仅支持 .dem 格式文件，请上传 CS2 demo 文件" });
+    return sendJson(res, 400, { error: "仅支持 .dem 或 .zip 文件（完美平台下载的 zip 可直接上传）" });
   }
 
   const uploadId = createId("upload");
@@ -177,13 +180,43 @@ async function handleUpload(req, res, url) {
   if (tooLarge || res.writableEnded) return;
 
   await fsp.rename(tempPath, targetPath);
-  const sha256 = hash.digest("hex");
+  let storedPath = targetPath;
+  let displayName = originalName;
+  let archiveName;
+  let finalSize = size;
+  let finalHash = hash.digest("hex");
+  if (isZip) {
+    let extracted;
+    try {
+        extracted = extractDemFromZip(targetPath);
+    } catch (error) {
+      await fsp.rm(targetPath, { force: true });
+      if (error instanceof ZipDemError) {
+        throw new HttpError(error.status, error.message);
+      }
+      throw error;
+    }
+    const demPath = path.join(UPLOAD_DIR, `${uploadId}.dem`);
+    try {
+      await fsp.writeFile(demPath, extracted.buffer);
+    } catch (error) {
+      await fsp.rm(targetPath, { force: true });
+      throw error;
+    }
+    storedPath = demPath;
+    displayName = sanitizeFileName(extracted.entryName || `${uploadId}.dem`);
+    if (!displayName.toLowerCase().endsWith(".dem")) displayName = `${displayName}.dem`;
+    archiveName = originalName;
+    finalSize = extracted.buffer.length;
+    finalHash = crypto.createHash("sha256").update(extracted.buffer).digest("hex");
+  }
   const uploadRecord = {
     id: uploadId,
-    originalName,
-    size,
-    sha256,
-    storedPath: targetPath,
+    originalName: displayName,
+    archiveName,
+    size: finalSize,
+    sha256: finalHash,
+    storedPath,
     createdAt: new Date().toISOString()
   };
 
@@ -202,18 +235,23 @@ async function handleUpload(req, res, url) {
       parseError: error.message,
       failedAt: new Date().toISOString()
     });
-    await fsp.rm(targetPath, { force: true });
+    await fsp.rm(storedPath, { force: true });
+    if (isZip) await fsp.rm(targetPath, { force: true });
     throw new HttpError(422, `Demo parsing failed: ${error.message}`);
   }
   const stored = { ...uploadRecord, parsed };
   await writeJson(path.join(UPLOAD_DIR, `${uploadId}.json`), stored);
 
+  if (isZip) {
+    await fsp.rm(targetPath, { force: true }).catch(() => {});
+  }
   return sendJson(res, 201, {
     upload: {
       id: uploadId,
-      originalName,
-      size,
-      sha256,
+      originalName: displayName,
+      archiveName,
+      size: finalSize,
+      sha256: finalHash,
       createdAt: uploadRecord.createdAt
     },
     parser: parsed.parser,
@@ -371,23 +409,32 @@ async function serveStatic(req, res, requestPath) {
   }
 }
 
-async function readJsonBody(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > 2 * 1024 * 1024) {
-      req.destroy();
-      throw new HttpError(413, "JSON body is too large.");
-    }
-    chunks.push(chunk);
-  }
-  if (chunks.length === 0) return {};
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch {
-    throw new HttpError(400, "Invalid JSON body.");
-  }
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > 2 * 1024 * 1024) {
+        req.destroy();
+        reject(new HttpError(413, "JSON body is too large."));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      if (chunks.length === 0) {
+        resolve({});
+        return;
+      }
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      } catch {
+        reject(new HttpError(400, "Invalid JSON body."));
+      }
+    });
+    req.on("error", reject);
+  });
 }
 
 async function readJson(filePath) {

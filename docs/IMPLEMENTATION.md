@@ -35,6 +35,8 @@ The current Go parser decodes:
 
 Map-specific tactics remain Mirage-only. Other recognized maps receive generic evidence-driven tactics and never inherit Mirage locations.
 
+Platform demos (Perfect World/完美平台, 5E) share the same `PBDEMS2` wire format as Valve demos, so the data layer parses them identically; upload the downloaded `.zip` directly.
+
 The production parser should continue expanding this output while preserving the current shape:
 
 - decode map, teams, players, sides, score, and round boundaries
@@ -85,9 +87,10 @@ Parser output validation rejects duplicate players/rounds/evidence, incomplete t
 
 ## API
 
-- `POST /api/uploads?filename=<name.dem>`
-  - body: raw `.dem` bytes
-  - response: upload metadata, parser metadata, structured match data
+- `POST /api/uploads?filename=<name.dem|name.zip>`
+  - body: raw `.dem` bytes, or a platform archive (Perfect World 完美平台 downloads are standard zips containing a `.dem`)
+  - zip handling: zero-dependency extraction (`src/zipDem.js`), prefers the `.dem` entry, verifies the `PBDEMS2` magic, and rejects archives whose extracted demo would exceed 1 GB (zip-bomb guard)
+  - response: upload metadata (inner dem name plus original archive name), parser metadata, structured match data
 - `POST /api/sample`
   - creates an explicitly synthetic Mirage product sample; it is isolated from real uploads
 - `POST /api/reports`

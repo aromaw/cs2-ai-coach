@@ -26,15 +26,15 @@
       <main class="workspace" id="workspace">
         <div class="empty-state-container" id="emptyState">
           <div class="empty-state-header">
-            <h2 class="page-title">拖放 .dem 文件至此开始分析</h2>
+            <h2 class="page-title">拖放 .dem / .zip 文件至此开始分析</h2>
             <button id="sampleButton" class="secondary-button sample-button" type="button">生成样例报告</button>
           </div>
 
           <label class="drop-zone" id="dropZone">
-            <input id="fileInput" type="file" accept=".dem">
+            <input id="fileInput" type="file" accept=".dem,.zip">
             <span class="upload-icon">↑</span>
             <span class="drop-title">拖放或点击上传 Demo 文件</span>
-            <span class="drop-subtitle">仅支持 .dem 格式，MVP 上限 500 MB</span>
+            <span class="drop-subtitle">支持 .dem 与完美平台等平台下载的 .zip（自动解压），上限 500 MB</span>
           </label>
 
           <div class="progress-wrap" aria-live="polite">

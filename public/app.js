@@ -51,7 +51,7 @@ els.fileInput.addEventListener("change", () => {
     const items = event.dataTransfer?.items;
     if (items && items[0]?.kind === 'file') {
       const file = items[0].getAsFile();
-      if (file && !file.name.toLowerCase().endsWith('.dem')) {
+      if (file && !isSupportedDemoFile(file.name)) {
         els.dropZone.classList.add("drag-invalid");
         return;
       }
@@ -199,9 +199,14 @@ function initTheme() {
   });
 }
 
+function isSupportedDemoFile(name) {
+  const lower = String(name || "").toLowerCase();
+  return lower.endsWith(".dem") || lower.endsWith(".zip");
+}
+
 async function uploadFile(file) {
-  if (!file.name.toLowerCase().endsWith(".dem")) {
-    setStatus("⚠️ 文件格式错误：仅支持 .dem 格式", "error");
+  if (!isSupportedDemoFile(file.name)) {
+    setStatus("⚠️ 文件格式错误：支持 .dem 或 .zip（完美平台下载的 zip 可直接上传）", "error");
     els.uploadProgress.parentElement.style.display = 'none';
     setTimeout(() => {
       setStatus("等待上传", "ok");
