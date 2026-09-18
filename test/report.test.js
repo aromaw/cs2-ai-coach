@@ -98,9 +98,9 @@ test("report rejects cross-team player selections", () => {
   );
 });
 
-test("report rejects unsupported maps for the Mirage MVP", () => {
+test("report rejects matches with an unknown map", () => {
   const parsed = parseDemo(upload);
-  parsed.match.map = "Inferno";
+  parsed.match.map = "unknown";
   parsed.match.supportedMap = false;
   const teamPlayers = parsed.match.players.filter((player) => player.teamId === "team_a").slice(0, 5);
 
@@ -110,6 +110,6 @@ test("report rejects unsupported maps for the Mirage MVP", () => {
         teamPlayerIds: teamPlayers.map((player) => player.id),
         focusPlayerId: teamPlayers[0].id
       }),
-    /Only Mirage is supported/
+    /Unsupported map/
   );
 });

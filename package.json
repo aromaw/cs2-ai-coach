@@ -8,10 +8,12 @@
     "build": "vite build && esbuild api/boot.ts --platform=node --bundle --format=esm --outdir=dist --external:@laihoe/demoparser2 --banner:js=\"import { createRequire } from 'module';const require = createRequire(import.meta.url);\"",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "NODE_ENV=production node dist/boot.js",
+    "start": "HOST=${HOST:-127.0.0.1} NODE_ENV=production CS2_DEMO_PARSER_REQUIRED=true node src/server.js",
+    "start:api": "NODE_ENV=production node dist/boot.js",
     "check": "tsc -b",
     "format": "prettier --write .",
-    "test": "vitest run",
+    "test": "node --test test/*.test.js",
+    "test:vitest": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push"
@@ -58,7 +60,7 @@
     "drizzle-orm": "^0.45.1",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^13.1.1",
-    "hono": "^4.8.3",
+    "hono": "^4.13.8",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",
     "mysql2": "^3.14.1",
@@ -85,7 +87,7 @@
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.23",
     "drizzle-kit": "^0.31.8",
-    "esbuild": "^0.27.2",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -100,5 +102,9 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
     "vitest": "^4.0.16"
+  },
+  "overrides": {
+    "lodash": "^4.18.1",
+    "esbuild": "$esbuild"
   }
 }

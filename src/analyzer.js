@@ -12,6 +12,11 @@ const HABIT_FIXES = {
     fix: "同一角度被发现后不要马上二次 peek，改用换位、等闪或让队友补位。",
     training: "练习 connector、short、A ramp 的一次接触后换位路线，每轮只允许无道具 repeek 一次。"
   },
+  repeat_death_position: {
+    severity: "中",
+    fix: "先复盘该点位每次死亡前的队友距离、道具和枪线；确认原因相同后再改变站位或接触方式。",
+    training: "针对重复死亡点位做三种处理：等闪、换位、双人补枪，并记录哪种能减少重复死亡。"
+  },
   low_value_utility: {
     severity: "中",
     fix: "把烟闪绑定到进点时间，不单独提前交关键道具；交道具后必须有队友利用窗口。",
@@ -24,7 +29,7 @@ const HABIT_FIXES = {
   },
   post_plant_overpeek: {
     severity: "高",
-    fix: "下包后优先建立交叉火力，不在烟未散或队友未就位前主动找人。",
+    fix: "先核对下包后早死时是否有人可交易；若属于孤立主动接触，再改为先建立交叉火力。",
     training: "A 点和 B 点各练 3 套 post-plant 站位，要求每个站位都有至少一个可互补角度。"
   },
   slow_rotate: {
@@ -74,13 +79,28 @@ const ROLE_REASONS = {
     primary: "IGL tendency",
     secondary: "Support",
     reason: "经济和执行时间相关事件多，适合负责中后期决策，但需要更早统一经济和进攻时间。"
+  },
+  "trade rifler": {
+    primary: "Second entry",
+    secondary: "Support",
+    reason: "本场补枪击杀占比较高，更适合作为第二枪位；这不等同于已证明具备长期 lurk 或指挥能力。"
+  },
+  "low-contact rifler": {
+    primary: "Support",
+    secondary: "Rotator",
+    reason: "本场第一接触占比较低，暂时更适合从支援和补位角色观察；demo 数据不足以直接判定 Anchor 或 Lurker。"
+  },
+  "balanced rifler": {
+    primary: "Second entry",
+    secondary: "Support",
+    reason: "本场第一接触、补枪和道具参与没有单项形成明显极值，先采用通用步枪位建议。"
   }
 };
 
 export function buildReport(parsedDemo, selection) {
   const match = parsedDemo.match;
-  if (!match.supportedMap) {
-    throw new Error(`Unsupported map for MVP analysis: ${match.map}. Only Mirage is supported.`);
+  if (!match.map || match.map === "unknown") {
+    throw new Error(`Unsupported map for analysis: ${match.map || "unknown"}.`);
   }
   const selectedIds = unique(selection.teamPlayerIds || []);
   if (selectedIds.length !== 5) {
@@ -102,8 +122,10 @@ export function buildReport(parsedDemo, selection) {
   const personalReports = selectedPlayers.map((player) => buildPersonalReport(match, player, targetRole));
   const teamReport = buildTeamReport(match, selectedPlayers, selectedEvidence);
   const keyRounds = buildKeyRounds(match, selectedIds);
-  const tactics = buildTactics(match, selectedPlayers, personalReports, selectedEvidence);
-  const trainingPlan = buildTrainingPlan(personalReports, teamReport);
+  const tactics = match.map === "Mirage"
+    ? buildTactics(match, selectedPlayers, personalReports, selectedEvidence)
+    : buildGeneralTactics(match, selectedPlayers, personalReports, selectedEvidence);
+  const trainingPlan = buildTrainingPlan(personalReports, teamReport, match);
 
   return {
     id: createId("report"),
@@ -135,6 +157,9 @@ export function buildReport(parsedDemo, selection) {
 }
 
 function buildParserCaveat(parser) {
+  if (parser?.sample) {
+    return "这是独立生成的产品样例，不代表任何真实 demo；真实上传不会自动降级到这套数据。";
+  }
   if (parser?.fallback) {
     return `当前报告使用 deterministic Mirage fallback 生成，因为真实解析器不可用：${parser.fallbackReason}`;
   }
@@ -145,11 +170,15 @@ function buildParserCaveat(parser) {
 }
 
 function buildOverview(match, players, evidence) {
+  const teamId = players[0]?.teamId;
   const issueCounts = countBy(evidence, "issue");
-  const biggestIssue = Object.entries(issueCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "solo_first_death";
-  const biggestIssueLabel = issueLibrary.find((item) => item.issue === biggestIssue)?.label || "默认阶段问题";
-  const turningRounds = match.rounds
-    .filter((round) => round.tags.some((tag) => ["opening_death_swing", "advantage_throw", "post_plant_failure", "economy_swing"].includes(tag)))
+  const biggestIssue = Object.entries(issueCounts)
+    .filter(([, count]) => count >= 2)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+  const biggestIssueLabel = biggestIssue
+    ? evidence.find((item) => item.issue === biggestIssue)?.label || issueLibrary.find((item) => item.issue === biggestIssue)?.label || biggestIssue
+    : "暂无明显重复失误";
+  const turningRounds = rankKeyRounds(match, players.map((player) => player.id))
     .slice(0, 3)
     .map((round) => ({
       round: round.number,
@@ -157,11 +186,18 @@ function buildOverview(match, players, evidence) {
       tags: round.tags,
       reason: roundReason(round)
     }));
-
+  const won = match.rounds.filter((round) => round.winnerTeamId === teamId).length;
+  const played = match.rounds.length;
+  const summary = evidence.length
+    ? `这场 ${match.map} 共 ${played} 回合，己方赢 ${won} 局。规则引擎标出 ${evidence.length} 条可复盘证据，${biggestIssueLabel}的证据最多（${issueCounts[biggestIssue] || 0} 条）。`
+    : `这场 ${match.map} 共 ${played} 回合，己方赢 ${won} 局。未发现足够重复的高置信度失误，建议先看关键回合时间线。`;
+  const best = pickBest(players, "adr");
   return {
-    summary: `这场 Mirage 的主要问题集中在${biggestIssueLabel}，相关证据覆盖 ${evidence.length} 条事件。队伍强项是能通过中后期补枪追回部分劣势，但默认控图和下包后纪律性需要优先修正。`,
-    biggestProblem: `${biggestIssueLabel}出现频率最高，导致多个回合在战术展开前就进入人数劣势。`,
-    biggestStrength: "队伍在有明确集合和同步道具时，补枪链和进点速度明显更稳定。",
+    summary,
+    biggestProblem: biggestIssue
+      ? `${biggestIssueLabel}有 ${issueCounts[biggestIssue]} 条证据，是本场最值得先复核的点。`
+      : "本场没有足够重复的负面证据，避免过度解读单回合。",
+    biggestStrength: `${best.name} 的 ADR 为 ${best.stats.adr}，是本场更稳定的输出点。`,
     map: match.map,
     score: `${match.score.team_a}-${match.score.team_b}`,
     sideWinRates: match.sideWinRates,
@@ -182,6 +218,8 @@ function buildPersonalReport(match, player, targetRole) {
     "issue"
   );
   const habits = Object.entries(evidenceByIssue)
+    .filter(([, items]) => items.length >= 2)
+    .sort((a, b) => b[1].length - a[1].length || (HABIT_FIXES[b[0]]?.severity === "高" ? 1 : 0) - (HABIT_FIXES[a[0]]?.severity === "高" ? 1 : 0))
     .slice(0, 5)
     .map(([issue, items]) => {
       const template = issueLibrary.find((item) => item.issue === issue);
@@ -189,7 +227,7 @@ function buildPersonalReport(match, player, targetRole) {
       return {
         id: `habit_${player.id}_${issue}`,
         issue,
-        title: template?.label || issue,
+        title: items[0]?.label || template?.label || issue,
         severity: fix.severity,
         evidence: items.slice(0, 3).map(formatEvidence),
         specificFix: fix.fix,
@@ -197,13 +235,13 @@ function buildPersonalReport(match, player, targetRole) {
       };
     });
 
-  const roleInfo = ROLE_REASONS[player.profile] || ROLE_REASONS["utility support"];
+  const roleInfo = ROLE_REASONS[player.profile] || ROLE_REASONS["balanced rifler"];
   return {
     player: summaryPlayer(player),
     stats: player.stats,
     habits,
     recommendedRoles: [roleInfo.primary, roleInfo.secondary],
-    roleReason: `${roleInfo.reason} 关键指标：opening duel win rate ${player.stats.openingDuelWinRate}，trade kill rate ${player.stats.tradeKillRate}，utility effectiveness ${player.stats.utilityEffectiveness}。`,
+    roleReason: `单场临时建议：${roleInfo.reason} 关键指标：opening duel win rate ${player.stats.openingDuelWinRate}，trade kill rate ${player.stats.tradeKillRate}，有道具收益回合率 ${player.stats.utilityEffectiveness}。需结合多场 demo 再确定长期角色。`,
     targetRoleFit: buildTargetRoleFit(player, roleInfo, targetRole),
     keyRounds: match.evidence
       .filter((item) => item.playerId === player.id)
@@ -213,11 +251,17 @@ function buildPersonalReport(match, player, targetRole) {
 }
 
 function buildTeamReport(match, players, evidence) {
+  const teamId = players[0]?.teamId;
   const openingProblems = evidence.filter((item) => item.issue === "solo_first_death").length;
   const utilityProblems = evidence.filter((item) => ["low_value_utility", "team_flash", "late_execute"].includes(item.issue)).length;
   const postPlantProblems = evidence.filter((item) => item.issue === "post_plant_overpeek").length;
+  const tradeProblems = evidence.filter((item) => item.issue === "trade_spacing_review").length;
+  const situation = computeSituationWinRates(match, teamId);
+  const weakArea = mostCommonLocation(evidence) || "（证据不足以定位区域）";
+  const issueCountsByPlayer = countBy(evidence, "playerId");
+  const reviewPlayer = [...players].sort((a, b) => (issueCountsByPlayer[b.id] || 0) - (issueCountsByPlayer[a.id] || 0))[0];
   const roleAllocation = players.map((player) => {
-    const info = ROLE_REASONS[player.profile] || ROLE_REASONS["utility support"];
+    const info = ROLE_REASONS[player.profile] || ROLE_REASONS["balanced rifler"];
     return {
       player: player.name,
       primaryRole: info.primary,
@@ -225,63 +269,66 @@ function buildTeamReport(match, players, evidence) {
       basis: info.reason
     };
   });
+  const tRounds = match.rounds.filter((round) => round.sideByTeam?.[teamId] === "T");
+  const tWins = tRounds.filter((round) => round.winnerTeamId === teamId).length;
+  const openingOnT = evidence.filter((item) => item.issue === "solo_first_death" && item.side === "T").length;
+  const strengths = [];
+  const weaknesses = [];
+  if (numericStat(pickBest(players, "adr").stats.adr) >= 80) strengths.push(`${pickBest(players, "adr").name} ADR ${pickBest(players, "adr").stats.adr}，是稳定输出点`);
+  if (situation.postPlant !== "n/a" && parsePercent(situation.postPlant) >= 55) strengths.push(`下包后胜率 ${situation.postPlant}`);
+  if (openingProblems === 0) strengths.push("本场没有重复的无补枪首死");
+  if (!strengths.length) strengths.push("能打满回合并保留完整击杀/经济数据，具备继续复盘的基础");
+  if (openingProblems >= 3) weaknesses.push(`无补枪首死 ${openingProblems} 次`);
+  if (tradeProblems >= 3) weaknesses.push(`补枪距离问题 ${tradeProblems} 次`);
+  if (postPlantProblems >= 2) weaknesses.push(`下包后人数领先时 8 秒内早死 ${postPlantProblems} 次`);
+  if (utilityProblems >= 3) weaknesses.push(`道具协同问题 ${utilityProblems} 次`);
+  if (!weaknesses.length) weaknesses.push("没有形成高频坏习惯，优先看关键回合而不是标签");
 
   return {
-    style: openingProblems >= 4 ? "偏快节奏，但默认控图质量不足，T 方前 40 秒容易出现单点接触。" : "节奏中等，依赖集合后的同步补枪。",
-    tSideDependency: "T 方对单人首个接触依赖偏高，边路和中路同时掉信息时容易被迫晚爆弹。",
-    ctRotation: "CT 方有过早转点和回防慢并存的问题，需要明确谁先补位、谁留点拖延。",
+    style: `仅凭事件流无法可靠判断快攻或慢控风格；可确认的是 T 方 ${tWins}/${tRounds.length || 0} 胜，无补枪首死 ${openingOnT} 次。`,
+    tSideDependency: openingOnT >= 3
+      ? "T 方对单人第一接触依赖偏高，首死后容易在战术展开前少人。"
+      : "T 方没有明显的单人开路依赖。",
+    ctRotation: evidence.filter((item) => item.issue === "slow_rotate").length
+      ? "CT 方存在回防过慢证据，需要明确谁先补位、谁留点拖延。"
+      : "本场没有足够的回防过慢证据，不把过早转点当结论。",
     stableOutput: pickBest(players, "adr").name,
-    pressurePoint: pickWorst(players, "kd").name,
-    weakArea: "Mirage top mid / connector 连接区",
-    fragileSituation: postPlantProblems > 1 ? "下包后 5v4 或 4v3 优势局" : "默认控图首死后的 4v5",
-    utilityCoordination: utilityProblems >= 4 ? "不足，烟闪与进点 timing 经常断开。" : "可用，但需要减少队友白和低收益闪。",
-    economyDiscipline: evidence.some((item) => item.issue === "economy_mismatch") ? "存在不同步强起，建议固定 freeze time 经济 call。" : "整体可控。",
+    pressurePoint: (issueCountsByPlayer[reviewPlayer?.id] || 0) >= 2
+      ? `${reviewPlayer.name}（${issueCountsByPlayer[reviewPlayer.id]} 条重复证据，非单看 K/D）`
+      : "无足够重复证据，不指定单一突破口",
+    weakArea,
+    fragileSituation: postPlantProblems > 1 ? "下包后人数优势局" : openingProblems > 1 ? "默认控图首死后的 4v5" : "尚不构成单一脆弱局势",
+    utilityCoordination: utilityProblems >= 4 ? `不足，道具问题 ${utilityProblems} 次。` : utilityProblems ? `一般，道具问题 ${utilityProblems} 次。` : "本场没有高频道具失误。",
+    economyDiscipline: evidence.some((item) => item.issue === "economy_mismatch") ? "存在不同步强起，建议固定 freeze time 经济 call。" : "本场没有明显的经济断层证据。",
     roleAllocation,
-    strengths: [
-      "集合进点时有补枪基础",
-      "部分队员的道具参与度高",
-      "残局里能保留足够信息再行动"
-    ],
-    weaknesses: [
-      "默认控图阶段补枪距离过远",
-      "下包后有人主动离开交叉火力",
-      "中后期执行时间偏晚"
-    ],
-    situationWinRates: {
-      fiveVFour: "58%",
-      fourVThree: "54%",
-      postPlant: "50%",
-      eco: "33%",
-      forceBuy: "44%"
-    }
+    strengths,
+    weaknesses,
+    situationWinRates: situation
   };
 }
 
 function buildKeyRounds(match, selectedIds) {
-  return match.rounds
-    .filter((round) => round.events.some((event) => selectedIds.includes(event.playerId)) && round.tags.length > 0)
-    .slice(0, 5)
-    .map((round) => {
-      const selectedEvents = round.events
-        .filter((event) => selectedIds.includes(event.playerId) || event.type === "c4")
-        .slice(0, 5);
-      return {
-        id: `key_round_${round.number}`,
-        round: round.number,
-        result: round.result,
-        tags: round.tags,
-        title: keyRoundTitle(round),
-        timeline: selectedEvents.map((event) => ({
-          time: event.time,
-          location: event.location,
-          event: event.description,
-          player: event.playerName
-        })),
-        mainMistake: mainMistakeForTags(round.tags),
-        betterPlay: betterPlayForTags(round.tags),
-        relatedPlayers: unique(selectedEvents.flatMap((event) => event.relatedPlayerIds?.length ? event.relatedPlayerIds : [event.playerId])).filter((id) => selectedIds.includes(id))
-      };
-    });
+  return rankKeyRounds(match, selectedIds).slice(0, 5).map((round) => {
+    const selectedEvents = round.events
+      .filter((event) => ["kill", "c4", "evidence"].includes(event.type) && (selectedIds.includes(event.playerId) || event.type === "c4" || event.relatedPlayerIds?.some((id) => selectedIds.includes(id))))
+      .slice(0, 8);
+    return {
+      id: `key_round_${round.number}`,
+      round: round.number,
+      result: round.result,
+      tags: round.tags,
+      title: keyRoundTitle(round),
+      timeline: selectedEvents.map((event) => ({
+        time: event.time,
+        location: event.location,
+        event: event.description,
+        player: event.playerName
+      })),
+      mainMistake: mainMistakeForTags(round.tags),
+      betterPlay: betterPlayForTags(round.tags),
+      relatedPlayers: unique(selectedEvents.flatMap((event) => event.relatedPlayerIds?.length ? event.relatedPlayerIds : [event.playerId])).filter((id) => selectedIds.includes(id))
+    };
+  });
 }
 
 function buildTactics(match, players, personalReports, evidence) {
@@ -375,7 +422,106 @@ function buildTactics(match, players, personalReports, evidence) {
   ];
 }
 
-function buildTrainingPlan(personalReports, teamReport) {
+function buildGeneralTactics(match, players, personalReports, evidence) {
+  const roleMap = mapPlayersToTacticRoles(players, personalReports);
+  const evidenceNotes = evidence.slice(0, 8).map(formatEvidence);
+  const openingCount = evidence.filter((item) => item.issue === "solo_first_death").length;
+  const tradeCount = evidence.filter((item) => item.issue === "trade_spacing_review").length;
+  const utilityCount = evidence.filter((item) => item.issue === "team_flash").length;
+  const evidenceReason = evidence.length
+    ? `本场共 ${evidence.length} 条证据，其中无补枪首死 ${openingCount} 次、补枪距离问题 ${tradeCount} 次、队友白 ${utilityCount} 次。`
+    : "本场没有足够的高置信度坏习惯证据，因此采用低风险、可交易的基础方案。";
+  return [
+    {
+      id: "tactic_t_trade_default",
+      name: `${match.map} T 方双人可交易默认`,
+      map: match.map,
+      side: "T",
+      economyCondition: "长枪局或可用道具完整的半起局",
+      objective: "所有第一接触都由双人完成，先拿信息再根据空区决定最终包点。",
+      assignments: [
+        assignment(roleMap.entry, "first contact", "负责第一个可撤退接触，不在无闪时深追"),
+        assignment(roleMap.secondEntry, "trade", "保持可补枪距离，第一枪位接触后立即跟进"),
+        assignment(roleMap.support, "support", "保存关键烟闪，收到最终 call 后再交"),
+        assignment(roleMap.lurker, "map control", "控一条边路并保留退路，不在队友无法支援时深摸"),
+        assignment(roleMap.caller, "caller", "在 0:55 前根据人数和信息确定集合点")
+      ],
+      openingSetup: "两组双人拿信息，一人负责中后期 call；第一接触前确认谁能补枪。",
+      utility: ["第一接触闪", "关键 choke 烟", "进点高闪", "下包后拖延道具"],
+      timing: "前 35 秒拿安全信息，0:55 前决定集合，0:40 前开始最终执行。",
+      contingency: "首人掉且不能交易时立即回收，不继续向同一枪线补送。",
+      whyFits: evidenceReason,
+      evidence: evidenceNotes.slice(0, 2)
+    },
+    {
+      id: "tactic_t_compact_execute",
+      name: `${match.map} T 方紧凑爆弹`,
+      map: match.map,
+      side: "T",
+      economyCondition: "至少两烟两闪，五人枪械结构接近",
+      objective: "缩短爆弹与进点间隔，保证道具窗口内至少两人同步接触。",
+      assignments: [
+        assignment(roleMap.entry, "entry", "吃第一颗闪进入包点并报近点"),
+        assignment(roleMap.secondEntry, "second entry", "贴近 entry，优先完成即时交易"),
+        assignment(roleMap.support, "utility", "负责封关键回防口和第二颗进点闪"),
+        assignment(roleMap.lurker, "late flank", "只做短距离牵制，爆弹前回到可支援范围"),
+        assignment(roleMap.caller, "post-plant caller", "下包后统一收缩与交叉火力位置")
+      ],
+      openingSetup: "三人执行组、一路短牵制、一人负责后路；不同时在三条路线单独找人。",
+      utility: ["回防口烟", "近点燃烧弹", "第一进点闪", "第二进点闪"],
+      timing: "第一颗进点道具后 3 秒内接触，关键烟落地后 8 秒内完成进点。",
+      contingency: "关键烟失败时暂停进点，等第二套道具或转向另一包点。",
+      whyFits: `${roleMap.support.name} 负责道具，${roleMap.secondEntry.name} 固定跟进，减少本场的孤立接触。`,
+      evidence: evidenceNotes.slice(2, 4)
+    },
+    {
+      id: "tactic_ct_information_chain",
+      name: `${match.map} CT 方信息链防守`,
+      map: match.map,
+      side: "CT",
+      economyCondition: "常规长枪局",
+      objective: "每个包点保留一名拖延者，转点只在获得第二条信息后发生。",
+      assignments: [
+        assignment(roleMap.anchor, "anchor", "保留拖延道具，第一接触后退回可存活位置"),
+        assignment(roleMap.rotator, "rotator", "负责第一轮补位，不在单一信息下彻底放空另一点"),
+        assignment(roleMap.support, "support", "为队友提供反清闪和回防烟"),
+        assignment(roleMap.entry, "contact defender", "拿第一信息后不深追，等待补位"),
+        assignment(roleMap.caller, "information caller", "统一确认人数、包和道具信息再 call 转点")
+      ],
+      openingSetup: "两点各保留拖延者，其余三人组成可互相支援的信息链。",
+      utility: ["首轮拖延烟", "反清闪", "回防烟", "拆包保护道具"],
+      timing: "前 35 秒只拿低风险信息；确认三人以上或 C4 后再大规模转点。",
+      contingency: "信息丢失时优先收缩交叉火力，不单人反清未知区域。",
+      whyFits: "只基于击杀、阵营与已有证据安排低风险防守，不推断语音和真实意图。",
+      evidence: evidenceNotes.slice(4, 6)
+    },
+    {
+      id: "tactic_low_buy_group",
+      name: `${match.map} eco/半起集中策略`,
+      map: match.map,
+      side: "Both",
+      economyCondition: "eco、半起或装备结构不统一",
+      objective: "集中有限枪械和道具制造一次可交易接触，避免分散送枪。",
+      assignments: [
+        assignment(roleMap.entry, "first contact", "拿低价值武器先接触并报点"),
+        assignment(roleMap.secondEntry, "trade rifle", "保留全队最好武器完成补枪"),
+        assignment(roleMap.support, "utility carrier", "集中使用唯一关键烟闪"),
+        assignment(roleMap.lurker, "sound bait", "只造声后回收，不深摸"),
+        assignment(roleMap.caller, "economy caller", "冻结时间统一 buy/save/force 决策")
+      ],
+      openingSetup: "至少三人集中，最好武器处于第二枪位。",
+      utility: ["唯一关键闪", "封枪线烟", "近点燃烧弹（如有）", "捡枪掩护"],
+      timing: "开局 20 秒内完成集结，一次同步接触；失败后保留最好武器。",
+      contingency: "第一波没有击杀就回收，不分散捡枪或逐个补送。",
+      whyFits: evidence.some((item) => item.issue === "economy_mismatch")
+        ? "本场存在经济不同步证据，低经济局应由一人统一 call。"
+        : "即使没有经济失误证据，集中策略也比五人分散接触更易执行。",
+      evidence: evidenceNotes.slice(6, 8)
+    }
+  ];
+}
+
+function buildTrainingPlan(personalReports, teamReport, match) {
   const repeatedHabits = countBy(personalReports.flatMap((report) => report.habits), "issue");
   const topHabits = Object.entries(repeatedHabits)
     .sort((a, b) => b[1] - a[1])
@@ -397,7 +543,7 @@ function buildTrainingPlan(personalReports, teamReport) {
     id: "training_team_tactics",
     title: `${tasks.length + 1}. 五人战术复盘`,
     objective: "用推荐战术跑 6 个训练回合，记录每次失败是否来自 timing、补枪距离或道具断档。",
-    drill: "Mirage A 夹和 B 爆各练 15 分钟，结束后只复盘有证据的失败点。",
+    drill: `${match.map} 选择两个包点执行各练 15 分钟，结束后只复盘有证据的失败点。`,
     successMetric: "每套战术连续 3 次执行时，关键烟闪和第一补枪都按计划完成。"
   });
 
@@ -451,6 +597,117 @@ function mapPlayersToTacticRoles(players, reports) {
     rotator: byRole.Rotator || players[4] || players[0],
     caller: byRole["IGL tendency"] || players[4] || players[0]
   };
+}
+
+function rankKeyRounds(match, selectedIds) {
+  const scored = match.rounds
+    .filter((round) => (round.events || []).some((event) => selectedIds.includes(event.playerId) || event.relatedPlayerIds?.some((id) => selectedIds.includes(id))))
+    .map((round) => {
+      const tags = round.tags || [];
+      let score = 0;
+      if (tags.includes("advantage_throw")) score += 5;
+      if (tags.includes("post_plant_failure")) score += 4;
+      if (tags.includes("opening_death_swing")) score += 3;
+      if (tags.includes("economy_swing")) score += 2;
+      if (tags.includes("key_round")) score += 1;
+      score += (round.events || []).filter((event) => event.type === "evidence" && selectedIds.includes(event.playerId)).length;
+      return { round, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.round.number - b.round.number);
+  return scored.map((item) => item.round);
+}
+
+function computeSituationWinRates(match, teamId) {
+  const playersById = Object.fromEntries((match.players || []).map((player) => [player.id, player]));
+  const teamOf = (playerId) => playersById[playerId]?.teamId;
+  let fiveVFour = { win: 0, play: 0 };
+  let fourVThree = { win: 0, play: 0 };
+  let postPlant = { win: 0, play: 0 };
+  let eco = { win: 0, play: 0 };
+  let forceBuy = { win: 0, play: 0 };
+
+  for (const round of match.rounds || []) {
+    const alive = {};
+    for (const player of match.players || []) {
+      if (player.teamId === "team_a" || player.teamId === "team_b") {
+        alive[player.teamId] = Math.min(5, (alive[player.teamId] || 0) + 1);
+      }
+    }
+    let sawFiveVFour = false;
+    let sawFourVThree = false;
+    let planted = false;
+    for (const event of round.events || []) {
+      if (event.type === "c4" && /planted/i.test(event.description || "")) planted = true;
+      if (event.type !== "kill") continue;
+      const victimId = event.relatedPlayerIds?.[0];
+      const victimTeam = teamOf(victimId);
+      if (victimTeam && alive[victimTeam] > 0) alive[victimTeam] -= 1;
+      const us = alive[teamId] || 0;
+      const them = alive[teamId === "team_a" ? "team_b" : "team_a"] || 0;
+      if (us === 5 && them === 4) sawFiveVFour = true;
+      if (us === 4 && them === 3) sawFourVThree = true;
+    }
+    const won = round.winnerTeamId === teamId;
+    if (sawFiveVFour) {
+      fiveVFour.play += 1;
+      if (won) fiveVFour.win += 1;
+    }
+    if (sawFourVThree) {
+      fourVThree.play += 1;
+      if (won) fourVThree.win += 1;
+    }
+    if (planted && round.sideByTeam?.[teamId] === "T") {
+      postPlant.play += 1;
+      if (won) postPlant.win += 1;
+    }
+    const selectedBuy = classifyBuyValue(round.economy?.[teamId]);
+    if (selectedBuy === "eco") {
+      eco.play += 1;
+      if (won) eco.win += 1;
+    }
+    if (selectedBuy === "force buy") {
+      forceBuy.play += 1;
+      if (won) forceBuy.win += 1;
+    }
+  }
+
+  const rate = (item) => (item.play ? percentRate(item.win, item.play) : "n/a");
+  return {
+    fiveVFour: rate(fiveVFour),
+    fourVThree: rate(fourVThree),
+    postPlant: rate(postPlant),
+    eco: rate(eco),
+    forceBuy: rate(forceBuy)
+  };
+}
+
+function classifyBuyValue(value) {
+  const equipment = Number(value);
+  if (!Number.isFinite(equipment) || equipment <= 0) return "unknown";
+  if (equipment < 6000) return "eco";
+  if (equipment < 14000) return "half buy";
+  if (equipment < 19000) return "force buy";
+  return "full buy";
+}
+
+function percentRate(win, play) {
+  return `${Math.round((win / Math.max(1, play)) * 100)}%`;
+}
+
+function parsePercent(value) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value.endsWith("%")) return Number(value.slice(0, -1)) || 0;
+  return 0;
+}
+
+function mostCommonLocation(evidence) {
+  const counts = {};
+  for (const item of evidence) {
+    if (!item.location || item.location === "unknown" || item.location === "freeze time") continue;
+    counts[item.location] = (counts[item.location] || 0) + 1;
+  }
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
 function findPlayer(match, id) {
@@ -520,10 +777,11 @@ function assignment(player, role, duty) {
 }
 
 function roundReason(round) {
-  if (round.tags.includes("advantage_throw")) return "人数优势后没有收缩交叉火力。";
-  if (round.tags.includes("post_plant_failure")) return "下包后站位过激，回防方获得连续单挑。";
-  if (round.tags.includes("economy_swing")) return "经济结构影响本回合道具和枪械质量。";
-  return "默认控图阶段首死导致战术展开受阻。";
+  if (round.tags.includes("advantage_throw")) return "曾取得至少两人人数优势但最终失利；需要复盘后续死亡顺序和可交易位置。";
+  if (round.tags.includes("post_plant_failure")) return "下包后人数领先时有人在 8 秒内死亡，且进攻方最终输掉回合。";
+  if (round.tags.includes("economy_swing")) return "同队出现有人全起、至少两人接近 eco 的装备断层。";
+  if (round.tags.includes("opening_death_swing")) return "首死时最近队友超过 800 units，且 5 秒内没有交易。";
+  return "该回合包含多条可核对事件，请按时间线复盘。";
 }
 
 function keyRoundTitle(round) {
@@ -534,24 +792,27 @@ function keyRoundTitle(round) {
 }
 
 function mainMistakeForTags(tags) {
-  if (tags.includes("advantage_throw")) return "拿到人数优势后继续分散找人，没有收缩到包点建立交叉火力。";
-  if (tags.includes("post_plant_failure")) return "下包后主动前压导致队友无法形成互补角度。";
-  if (tags.includes("economy_swing")) return "经济和道具配置不统一，本回合无法支撑完整执行。";
-  if (tags.includes("late_execute")) return "执行开始过晚，烟闪窗口不足。";
-  return "默认控图阶段第一接触无人可补，后续战术被迫中断。";
+  if (tags.includes("advantage_throw")) return "确认问题：至少两人人数优势最终被逆转；具体决策原因需结合时间线复盘。";
+  if (tags.includes("post_plant_failure")) return "确认问题：下包后人数领先时出现 8 秒内早死，随后进攻方输局。";
+  if (tags.includes("economy_swing")) return "确认问题：同队装备结构明显不统一。";
+  if (tags.includes("late_execute")) return "确认问题：执行开始较晚，剩余操作时间不足。";
+  if (tags.includes("opening_death_swing")) return "确认问题：首死距离队友过远，5 秒内无人交易。";
+  return "没有足够规则证据给出单一失误结论。";
 }
 
 function betterPlayForTags(tags) {
-  if (tags.includes("advantage_throw")) return "领先后优先回到包点和关键 choke 点，保证每个接触都能被 5 秒内交易。";
-  if (tags.includes("post_plant_failure")) return "下包后 entry 回到 triple/default 附近，palace 或 ramp 队友建立交叉，烟消失前补位架 connector。";
-  if (tags.includes("economy_swing")) return "冻结时间统一 call 半起或 eco，集中道具打一套可重复执行的区域控制。";
-  return "首个接触必须有闪光或第二枪位跟进，不能让边路队员单独扩大接触面。";
+  if (tags.includes("advantage_throw")) return "领先后减少孤立接触，优先占据能互相补枪的位置，并在下一次接触前确认人数。";
+  if (tags.includes("post_plant_failure")) return "下包后先建立至少一组交叉火力，前 8 秒避免没有队友可交易的单独接触。";
+  if (tags.includes("economy_swing")) return "冻结时间统一 call 全起、半起或 eco，确保有限的最好武器处于第二枪位。";
+  if (tags.includes("opening_death_swing")) return "第一接触前让第二枪位进入 800 units 内，或等队友道具后再扩大接触面。";
+  return "按事件时间线逐项确认可交易距离、道具窗口和人数变化。";
 }
 
 function successMetricForIssue(issue) {
   const metrics = {
     solo_first_death: "无交易首死减少到每半场 1 次以内。",
     repeat_peek: "同一角度无道具 repeek 死亡每场不超过 1 次。",
+    repeat_death_position: "同一命名点位的重复死亡减少到每场 1 次以内。",
     low_value_utility: "关键闪光后 4 秒内至少一名队友利用窗口接触。",
     team_flash: "进点闪导致队友全白次数降到 0。",
     post_plant_overpeek: "下包后人数优势局胜率达到 70% 以上。",

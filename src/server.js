@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { enrichReportWithAI } from "./aiRunner.js";
 import { buildReport } from "./analyzer.js";
 import { reportToMarkdown } from "./markdown.js";
+import { parseDemo } from "./parser.js";
 import { parseUploadedDemo } from "./parserRunner.js";
 import { createId, sanitizeFileName } from "./util.js";
 
@@ -20,7 +21,9 @@ const REPORT_DIR = path.join(DATA_DIR, "reports");
 const FEEDBACK_DIR = path.join(DATA_DIR, "feedback");
 const FEEDBACK_FILE = path.join(FEEDBACK_DIR, "feedback.jsonl");
 const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
-const PORT = Number(process.env.PORT || 4173);
+const DEFAULT_PORT = 4173;
+const PORT = parsePort(process.env.PORT || DEFAULT_PORT);
+const HOST = process.env.HOST || "127.0.0.1";
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -64,6 +67,10 @@ const server = http.createServer(async (req, res) => {
       return handleUpload(req, res, url);
     }
 
+    if (req.method === "POST" && url.pathname === "/api/sample") {
+      return handleSample(res);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/reports") {
       return handleListReports(res);
     }
@@ -100,7 +107,7 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-listenWithFallback(server, PORT);
+listenWithFallback(server, PORT, HOST);
 
 async function ensureDirectories() {
   await fsp.mkdir(UPLOAD_DIR, { recursive: true });
@@ -195,6 +202,7 @@ async function handleUpload(req, res, url) {
       parseError: error.message,
       failedAt: new Date().toISOString()
     });
+    await fsp.rm(targetPath, { force: true });
     throw new HttpError(422, `Demo parsing failed: ${error.message}`);
   }
   const stored = { ...uploadRecord, parsed };
@@ -213,10 +221,48 @@ async function handleUpload(req, res, url) {
   });
 }
 
+async function handleSample(res) {
+  const uploadId = createId("upload");
+  const sha256 = crypto.createHash("sha256").update(`${uploadId}:${Date.now()}`).digest("hex");
+  const uploadRecord = {
+    id: uploadId,
+    originalName: "sample-mirage.dem",
+    size: 0,
+    sha256,
+    storedPath: "",
+    createdAt: new Date().toISOString(),
+    sample: true
+  };
+  const parsed = parseDemo(uploadRecord);
+  parsed.parser = {
+    ...parsed.parser,
+    mode: "synthetic-sample",
+    fallback: false,
+    sample: true
+  };
+  const stored = { ...uploadRecord, parsed };
+  await writeJson(path.join(UPLOAD_DIR, `${uploadId}.json`), stored);
+  return sendJson(res, 201, {
+    upload: {
+      id: uploadId,
+      originalName: uploadRecord.originalName,
+      size: 0,
+      sha256,
+      createdAt: uploadRecord.createdAt,
+      sample: true
+    },
+    parser: parsed.parser,
+    match: parsed.match
+  });
+}
+
 async function handleCreateReport(req, res) {
   const body = await readJsonBody(req);
   const uploadId = String(body.uploadId || "");
   const uploadRecord = await readUpload(uploadId);
+  if (!uploadRecord.parsed || uploadRecord.parseError) {
+    throw new HttpError(422, "该上传记录没有可用的解析结果。");
+  }
   const baseReport = buildReport(uploadRecord.parsed, {
     teamPlayerIds: body.teamPlayerIds,
     focusPlayerId: body.focusPlayerId,
@@ -330,7 +376,10 @@ async function readJsonBody(req) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 2 * 1024 * 1024) throw new HttpError(413, "JSON body is too large.");
+    if (size > 2 * 1024 * 1024) {
+      req.destroy();
+      throw new HttpError(413, "JSON body is too large.");
+    }
     chunks.push(chunk);
   }
   if (chunks.length === 0) return {};
@@ -359,7 +408,15 @@ function drain(req) {
   req.resume();
 }
 
-function listenWithFallback(httpServer, startPort) {
+function parsePort(value) {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid PORT: ${value}`);
+  }
+  return port;
+}
+
+function listenWithFallback(httpServer, startPort, host) {
   const maxAttempts = 20;
   let attempts = 0;
 
@@ -372,8 +429,8 @@ function listenWithFallback(httpServer, startPort) {
       }
       throw error;
     });
-    httpServer.listen(port, () => {
-      console.log(`CS2 Demo AI Coach running at http://localhost:${port}`);
+    httpServer.listen(port, host, () => {
+      console.log(`CS2 Demo AI Coach running at http://${host}:${port}`);
     });
   };
 

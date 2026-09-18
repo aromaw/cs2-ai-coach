@@ -18,19 +18,16 @@ interface ScoreboardProps {
   markMvp?: boolean;
 }
 
-export default function Scoreboard({ players, matchId, highlight, markMvp }: ScoreboardProps) {
-  const mvpName = markMvp
-    ? [...players].sort((a, b) => b.rating - a.rating)[0]?.name
-    : undefined;
+interface TeamBlockProps {
+  team: PlayerStat[];
+  side: "T" | "CT";
+  matchId: string | number;
+  highlight?: string;
+  mvpName?: string;
+}
 
-  const tPlayers = [...players]
-    .filter((p) => p.startSide === "T")
-    .sort((a, b) => b.score - a.score);
-  const ctPlayers = [...players]
-    .filter((p) => p.startSide === "CT")
-    .sort((a, b) => b.score - a.score);
-
-  const TeamBlock = ({ team, side }: { team: PlayerStat[]; side: "T" | "CT" }) => (
+function TeamBlock({ team, side, matchId, highlight, mvpName }: TeamBlockProps) {
+  return (
     <div>
       <div className="flex items-center gap-3 border-t-2 border-line px-2 py-2.5">
         <span
@@ -42,8 +39,8 @@ export default function Scoreboard({ players, matchId, highlight, markMvp }: Sco
           {team[0]?.teamName ?? (side === "T" ? "T 阵营" : "CT 阵营")}
         </span>
         <span className="font-mono text-xs text-ink-3">
-          {side === "T" ? "T 开局" : "CT 开局"} ·{" "}
-          合计 {team.reduce((a, p) => a + p.kills, 0)} 击杀
+          {side === "T" ? "T 开局" : "CT 开局"} · 合计{" "}
+          {team.reduce((a, p) => a + p.kills, 0)} 击杀
         </span>
       </div>
       {team.map((p) => (
@@ -91,6 +88,19 @@ export default function Scoreboard({ players, matchId, highlight, markMvp }: Sco
       ))}
     </div>
   );
+}
+
+export default function Scoreboard({ players, matchId, highlight, markMvp }: ScoreboardProps) {
+  const mvpName = markMvp
+    ? [...players].sort((a, b) => b.rating - a.rating)[0]?.name
+    : undefined;
+
+  const tPlayers = [...players]
+    .filter((p) => p.startSide === "T")
+    .sort((a, b) => b.score - a.score);
+  const ctPlayers = [...players]
+    .filter((p) => p.startSide === "CT")
+    .sort((a, b) => b.score - a.score);
 
   return (
     <div>
@@ -106,8 +116,8 @@ export default function Scoreboard({ players, matchId, highlight, markMvp }: Sco
         <span className="text-center">FK</span>
         <span className="text-center">RTG</span>
       </div>
-      <TeamBlock team={tPlayers} side="T" />
-      <TeamBlock team={ctPlayers} side="CT" />
+      <TeamBlock team={tPlayers} side="T" matchId={matchId} highlight={highlight} mvpName={mvpName} />
+      <TeamBlock team={ctPlayers} side="CT" matchId={matchId} highlight={highlight} mvpName={mvpName} />
     </div>
   );
 }

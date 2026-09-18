@@ -5,7 +5,7 @@
 The repository now contains a runnable local MVP for the first PRD loop:
 
 ```text
-Upload Mirage .dem
+Upload a supported CS2 .dem
 -> parse into structured match data
 -> select the user's five-player team
 -> choose a focus player
@@ -17,18 +17,23 @@ The app intentionally uses a small dependency-free Node.js server so it can run 
 
 ## Important Parser Boundary
 
-`src/parserRunner.js` is the parser integration boundary. Uploads are saved first, then the app tries to call a configured external parser. By default it looks for `bin/cs2-demoparser`, which is built from `cmd/demoparser` with `demoinfocs-golang`. If no real parser is configured or the real parser fails, the app falls back to `src/parser.js`, a deterministic Mirage adapter that produces stable structured match data from the upload hash. This keeps the product workflow usable while exposing `parser.fallbackReason` in the upload response and report.
+`src/parserRunner.js` is the parser integration boundary. Uploads are saved first, then the app calls a configured external parser. By default it looks for `bin/cs2-demoparser`, which is built from `cmd/demoparser` with `demoinfocs-golang`.
+
+Normal uploads are strict: if the real parser is missing, fails, or emits an inconsistent contract, the request fails instead of silently inventing match data. The product sample uses the separate `POST /api/sample` endpoint and is explicitly marked `synthetic-sample`; it never shares the real upload path. `CS2_DEMO_PARSER_ALLOW_FALLBACK=true` remains an opt-in development escape hatch and must not be enabled in production.
 
 The current Go parser decodes:
 
-- demo header and map
-- players and stable five-player team ids
-- round starts and round ends
-- score and side win rates
-- kills, first deaths, damage, C4 events, grenade timeline events, and flash results
-- event-backed evidence for first deaths, team flashes, and post-plant review points
-- lightweight player path summaries from observed place names/positions
-- per-round equipment-value economy snapshots
+- final Source 2 header/server-info map name
+- players and stable team ids across halftime side swaps
+- completed regulation/overtime rounds while excluding warmup and rolling back restarted/incomplete rounds
+- score derived from completed round winners, plus side win rates
+- enemy kills, deaths, assists, scoreboard damage/utility damage, C4 events, flash results, and real round-relative timestamps
+- KAST, opening duels, trades, traded deaths, average trade time, and utility-impact rounds
+- evidence with explicit thresholds for far untraded deaths, team flashes, repeated named death areas, economy mismatches, and early post-plant deaths
+- sampled place-name path summaries instead of raw coordinate strings
+- per-team round-start equipment snapshots and buy classification
+
+Map-specific tactics remain Mirage-only. Other recognized maps receive generic evidence-driven tactics and never inherit Mirage locations.
 
 The production parser should continue expanding this output while preserving the current shape:
 
@@ -70,13 +75,9 @@ The parser must write one JSON document to stdout. The document must include:
 - `match.rounds[]` with `number`, `winnerTeamId`, `sideByTeam`, and `events`
 - `match.evidence[]` with `id`, `playerId`, `round`, `time`, `location`, and `description`
 
-When the parser output fails validation, the app falls back to the deterministic adapter by default and exposes `parser.fallbackReason` in the upload response. To fail hard instead, run:
+Parser output validation rejects duplicate players/rounds/evidence, incomplete teams, invalid team/side mappings, score-round mismatches, bad evidence references, and non-`m:ss` evidence timestamps. Normal uploads fail hard by default.
 
-```sh
-CS2_DEMO_PARSER_REQUIRED=true CS2_DEMO_PARSER_BIN=/absolute/path/to/parser npm start
-```
-
-`tools/mock-real-parser.sh` is a small fixture parser used by tests to prove the external parser path.
+`tools/mock-real-parser.sh` is a fixture parser used by tests to prove the external parser path.
 
 ### demoinfocs Status
 
@@ -87,6 +88,8 @@ CS2_DEMO_PARSER_REQUIRED=true CS2_DEMO_PARSER_BIN=/absolute/path/to/parser npm s
 - `POST /api/uploads?filename=<name.dem>`
   - body: raw `.dem` bytes
   - response: upload metadata, parser metadata, structured match data
+- `POST /api/sample`
+  - creates an explicitly synthetic Mirage product sample; it is isolated from real uploads
 - `POST /api/reports`
   - body: `{ "uploadId": "...", "teamPlayerIds": ["p1", "..."], "focusPlayerId": "p1", "targetRole": "Support" }`
   - response: full evidence-driven report
@@ -143,4 +146,6 @@ GOCACHE=$(pwd)/.cache/go-build go test ./...
 npm start
 ```
 
-The app runs at `http://localhost:4173` by default. Set `PORT=xxxx` before `npm start` to use another port.
+The app runs at `http://localhost:4173` by default. Set `PORT=xxxx` before starting `node src/server.js` to use another port.
+
+Accuracy changes were end-to-end checked against official demoinfocs Source 2 fixtures for Ancient (21 rounds), Anubis (14 rounds), and Inferno (17 rounds), including map detection, halftime team identity, completed-round score consistency, player count, non-zero ADR, and parser contract validation.

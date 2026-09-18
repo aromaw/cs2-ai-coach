@@ -1,5 +1,5 @@
 // V2 战术热力页（design-v2/tactics.md）：2 分区 — 地图舞台+读数面板 / 道具行
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { Skeleton } from "@/components/ui/skeleton";
 import MatchHeader from "@/components/match/MatchHeader";
@@ -36,13 +36,15 @@ export default function Tactics() {
   const [mode, setMode] = useState<LayerMode>("death");
   const [side, setSide] = useState<SideMode>("all");
   const [scope, setScope] = useState<PlayerScope>("all");
-  const [range, setRange] = useState<[number, number]>([1, 24]);
+  const [selectedRange, setSelectedRange] = useState<[number, number]>([
+    1,
+    Number.MAX_SAFE_INTEGER,
+  ]);
   const roundsTotal = data?.match.roundsTotal ?? 24;
-
-  // 数据到达后同步滑杆到全程（roundsTotal 仅在加载完成时变化一次）
-  useEffect(() => {
-    setRange([1, roundsTotal]);
-  }, [roundsTotal]);
+  const range = useMemo<[number, number]>(
+    () => [Math.max(1, selectedRange[0]), Math.min(roundsTotal, selectedRange[1])],
+    [roundsTotal, selectedRange],
+  );
 
   // 主角玩家（"你"）：设计约定 s1mple丶Fan，缺失时取评分最高者
   const hero = useMemo(() => {
@@ -87,7 +89,7 @@ export default function Tactics() {
               side={side}
               onSideChange={setSide}
               range={range}
-              onRangeChange={setRange}
+              onRangeChange={setSelectedRange}
             />
           </div>
           <div className="lg:col-span-4">

@@ -1,6 +1,6 @@
 // V2 道具行（design-v2/tactics.md §S2）：一行 4 个裸读数，竖发丝线分隔
 // 收尾 CoachNote（闪光纪律）；无卡片、无 mini 柱图
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import SectionHeader from "@/components/board/SectionHeader";
 import CoachNote from "@/components/board/CoachNote";
@@ -11,14 +11,13 @@ type SideTab = "all" | "T" | "CT";
 /** 读数 count-up（0.8s，inView 一次） */
 function useCountUp(value: number, duration = 800): number {
   const [display, setDisplay] = useState(0);
-  const ref = useRef<number>(value);
-  ref.current = value;
   useEffect(() => {
     const t0 = performance.now();
     let raf = 0;
+    const target = value;
     const tick = () => {
       const p = Math.min(1, (performance.now() - t0) / duration);
-      setDisplay(ref.current * (1 - Math.pow(1 - p, 3)));
+      setDisplay(target * (1 - Math.pow(1 - p, 3)));
       if (p < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);

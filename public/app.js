@@ -75,13 +75,30 @@ els.dropZone.addEventListener("drop", (event) => {
 });
 
 els.sampleButton.addEventListener("click", async () => {
-  const sample = new File([buildSampleDemoBytes()], `sample-mirage-${Date.now()}.dem`, {
-    type: "application/octet-stream"
-  });
-  await uploadFile(sample);
-  await new Promise(resolve => setTimeout(resolve, 100));
-  autoSelectTeam();
-  await createReport();
+  state.report = null;
+  state.selectedIds = new Set();
+  setProgress(10);
+  setStatus("正在载入独立样例数据", "ok");
+  showSetupView();
+  try {
+    const response = await api("/api/sample", { method: "POST" });
+    state.upload = response.upload;
+    state.match = {
+      ...response.match,
+      parserNote: "独立样例数据（不会用于真实 demo 上传）"
+    };
+    els.matchTitle.textContent = `${response.match.map} ${response.match.score.team_a}-${response.match.score.team_b}`;
+    els.parserBadge.textContent = response.parser.mode;
+    els.parserBadge.classList.add("muted");
+    setStatus("样例已载入", "ok");
+    setProgress(100);
+    renderMatch();
+    renderPlayers();
+    autoSelectTeam();
+    await createReport();
+  } catch (error) {
+    setStatus(error.message, "error");
+  }
 });
 
 els.createReport.addEventListener("click", createReport);
@@ -222,9 +239,13 @@ async function uploadFile(file) {
     setProgress(100);
     renderMatch();
     renderPlayers();
-    if (response.match.supportedMap === false) {
-      els.selectionHint.textContent = `当前 MVP 只支持 Mirage，无法为 ${response.match.map} 生成报告。`;
+    if (response.match.map === "unknown") {
+      els.selectionHint.textContent = "无法识别地图，不能生成可靠报告。";
       els.selectionHint.classList.add("status-error");
+    } else if (response.match.supportedMap === false) {
+      els.selectionHint.textContent = `${response.match.map} 将使用通用、证据驱动的战术建议；不会套用 Mirage 点位模板。`;
+      els.selectionHint.classList.remove("status-error");
+      els.selectionHint.classList.add("status-ok");
     }
   } catch (error) {
     stopParseProgress();
@@ -501,7 +522,8 @@ function updateCreateButton() {
   const selectedTeams = new Set(selectedPlayers.map((player) => player.teamId));
   els.createReport.disabled =
     !state.upload ||
-    state.match?.supportedMap === false ||
+    !state.match?.map ||
+    state.match.map === "unknown" ||
     state.selectedIds.size !== 5 ||
     selectedTeams.size !== 1 ||
     !els.focusPlayer.value ||
@@ -857,17 +879,6 @@ function statHtml(label, value) {
       <strong class="stat-value">${escapeHtml(String(value))}</strong>
     </div>
   `;
-}
-
-function buildSampleDemoBytes() {
-  const lines = [
-    "CS2 DEMO PLACEHOLDER",
-    "map=de_mirage",
-    "players=10",
-    `seed=${Date.now()}`,
-    "This local MVP validates upload, parsing, evidence selection, and report generation."
-  ];
-  return lines.join("\n");
 }
 
 function escapeHtml(value) {

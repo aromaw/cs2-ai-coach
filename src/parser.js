@@ -44,6 +44,13 @@ const ISSUE_LIBRARY = [
     text: (name, location) => `${name}在${location}连续两次 peek 同一角度，第二次被预瞄击杀。`
   },
   {
+    issue: "repeat_death_position",
+    label: "重复死亡点位",
+    locations: ["connector", "A ramp", "short"],
+    event: "同点位重复死亡",
+    text: (name, location) => `${name}在${location}重复死亡；需要结合时间线判断是否为同一角度 repeek。`
+  },
+  {
     issue: "low_value_utility",
     label: "道具无收益",
     locations: ["top mid", "A execute", "B apps"],

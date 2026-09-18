@@ -17,11 +17,18 @@ const upload = {
   storedPath: path.join(root, "test", "fixtures", "minimal.dem")
 };
 
-test("parseUploadedDemo falls back when no real parser is configured", async () => {
-  const parsed = await parseUploadedDemo(upload, { parserBin: "" });
+test("parseUploadedDemo only falls back when fallback is explicitly allowed", async () => {
+  const parsed = await parseUploadedDemo(upload, { parserBin: "", allowFallback: true });
   assert.equal(parsed.parser.mode, "synthetic-fallback");
   assert.equal(parsed.parser.fallback, true);
   assert.match(parsed.parser.fallbackReason, /not configured/);
+});
+
+test("parseUploadedDemo rejects a normal upload when no real parser is configured", async () => {
+  await assert.rejects(
+    () => parseUploadedDemo(upload, { parserBin: null }),
+    /Real demo parser is not configured/
+  );
 });
 
 test("parseUploadedDemo uses configured external parser when it emits valid contract JSON", async () => {
@@ -48,4 +55,10 @@ test("parseUploadedDemo can require the real parser and fail on invalid output",
 test("validateParsedDemo accepts the current report contract", () => {
   const parsed = parseDemo(upload);
   assert.doesNotThrow(() => validateParsedDemo(parsed));
+});
+
+test("validateParsedDemo rejects a score that does not match completed rounds", () => {
+  const parsed = parseDemo(upload);
+  parsed.match.score.team_a += 1;
+  assert.throws(() => validateParsedDemo(parsed), /match.score must equal completed round winners/);
 });

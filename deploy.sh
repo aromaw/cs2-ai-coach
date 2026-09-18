@@ -8,7 +8,7 @@
 #
 # Quick start on a fresh Debian/Ubuntu VPS:
 #
-#   curl -fsSL https://raw.githubusercontent.com/ttvdKaori/cs2-ai-coach/main/deploy.sh -o deploy.sh
+#   curl -fsSL https://raw.githubusercontent.com/aromaw/cs2-ai-coach/main/deploy.sh -o deploy.sh
 #   sudo bash deploy.sh
 #
 # Or, from inside an existing checkout:
@@ -22,10 +22,11 @@
 set -euo pipefail
 
 # ---- Configuration (override via environment) -------------------------------
-REPO_URL="${REPO_URL:-https://github.com/ttvdKaori/cs2-ai-coach.git}"
+REPO_URL="${REPO_URL:-https://github.com/aromaw/cs2-ai-coach.git}"
 APP_DIR="${APP_DIR:-/opt/cs2-demo-ai-coach}"
 BRANCH="${BRANCH:-main}"
-PORT="${PORT:-4173}"
+PORT="${PORT:-34845}"
+HOST="${HOST:-127.0.0.1}"
 SERVICE_NAME="${SERVICE_NAME:-cs2-demo-ai-coach}"
 NODE_MAJOR="${NODE_MAJOR:-22}"           # Node LTS major; app requires >=20
 RUN_USER="${RUN_USER:-${SUDO_USER:-root}}"
@@ -199,6 +200,8 @@ install_service() {
     echo "WorkingDirectory=${APP_DIR}"
     echo "ExecStart=${node_bin} ${server_js}"
     echo "Environment=PORT=${PORT}"
+    echo "Environment=HOST=${HOST}"
+    echo "Environment=CS2_DEMO_PARSER_REQUIRED=true"
     [[ -n "$CS2_COACH_AI_BIN" ]]    && echo "Environment=CS2_COACH_AI_BIN=${CS2_COACH_AI_BIN}"
     [[ -n "$CS2_DEMO_PARSER_BIN" ]] && echo "Environment=CS2_DEMO_PARSER_BIN=${CS2_DEMO_PARSER_BIN}"
     echo "Restart=on-failure"
@@ -241,7 +244,7 @@ main() {
     log "Restart: systemctl restart ${SERVICE_NAME}"
   else
     warn "systemd not available; start the app manually:"
-    echo "  cd ${APP_DIR} && PORT=${PORT} node src/server.js"
+    echo "  cd ${APP_DIR} && HOST=${HOST} PORT=${PORT} CS2_DEMO_PARSER_REQUIRED=true node src/server.js"
   fi
 }
 

@@ -95,15 +95,21 @@ export default function EconomyChart({ data, pivot }: EconomyChartProps) {
   }, []);
 
   const { chartData, diffs } = useMemo(() => {
-    let cum = 0;
-    const diffs = new Map<number, number>();
-    const chartData = economy.map((e) => {
-      const r = rounds.find((x) => x.round === e.round);
-      // 胜方装备保留、败方装备清零：胜负加权的装备差近似回合经济流向
-      if (r) cum += r.winner === "T" ? r.equipValueT : -r.equipValueCT;
-      diffs.set(e.round, cum);
-      return { ...e, diff: cum };
-    });
+    const byRound = new Map(rounds.map((round) => [round.round, round]));
+    const chartData = economy.reduce<Array<(typeof economy)[number] & { diff: number }>>(
+      (items, entry) => {
+        const previous = items.at(-1)?.diff ?? 0;
+        const round = byRound.get(entry.round);
+        const delta = round
+          ? round.winner === "T"
+            ? round.equipValueT
+            : -round.equipValueCT
+          : 0;
+        return [...items, { ...entry, diff: previous + delta }];
+      },
+      [],
+    );
+    const diffs = new Map(chartData.map((entry) => [entry.round, entry.diff]));
     return { chartData, diffs };
   }, [economy, rounds]);
 

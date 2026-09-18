@@ -13,7 +13,7 @@ app.use(bodyLimit({ maxSize: 512 * 1024 * 1024 }));
 
 // CS2 demo 上传与解析：multipart/form-data，字段名 "file"
 app.post("/api/demo/upload", async (c) => {
-  const { writeFile, mkdir, unlink } = await import("fs/promises");
+  const { writeFile, mkdir } = await import("fs/promises");
   const os = await import("os");
   const path = await import("path");
 
