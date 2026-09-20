@@ -43,6 +43,7 @@ export default function Navbar() {
               />
             ))}
           <NavItem to="/history" label="历史对局" />
+          <NavItem to="/trends" label="近期趋势" />
         </nav>
 
         {/* Right: upload + version */}

@@ -78,6 +78,14 @@ export default function Tactics() {
           </p>
         )}
 
+        {/* 热力数据空态：旧版录像无击杀坐标时的明确提示 */}
+        {scopedHeat.length === 0 && (
+          <p className="mt-6 border border-line px-4 py-3 font-mono text-[11px] text-warn">
+            ※ 该录像没有可用的位置数据（旧版本录像或未录制坐标），热力图不可用；
+            统计与建议不受影响。
+          </p>
+        )}
+
         {/* S1 地图舞台（左 8）+ 读数面板（右 4） */}
         <div className="grid grid-cols-1 gap-10 py-10 md:py-14 lg:grid-cols-12">
           <div className="lg:col-span-8">
@@ -105,6 +113,7 @@ export default function Tactics() {
               heroName={hero.name}
               teamT={data.match.teamTName}
               teamCT={data.match.teamCTName}
+              mapName={data.match.mapName}
             />
           </div>
         </div>

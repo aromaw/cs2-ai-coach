@@ -7,6 +7,7 @@ import Rounds from '@/pages/Rounds'
 import Tactics from '@/pages/Tactics'
 import Coach from '@/pages/Coach'
 import History from '@/pages/History'
+import Trends from '@/pages/Trends'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="match/:id/tactics" element={<Tactics />} />
         <Route path="match/:id/coach" element={<Coach />} />
         <Route path="history" element={<History />} />
+        <Route path="trends" element={<Trends />} />
         <Route path="*" element={<Home />} />
       </Route>
     </Routes>

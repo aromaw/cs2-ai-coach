@@ -284,6 +284,8 @@ export function parseDemoFile(path: string): RawDemoData {
       ),
     {},
   );
+  // 道具事件坐标：detonate/inferno 类用事件自带的小写 x/y（真实爆点）；
+  // player_blind 没有爆点字段，用被闪者坐标（user_X/Y）近似。
   const grenadeEvents: RawGrenadeEvent[] = nadeEventNames.flatMap((ev) =>
     rowsOf(nadeParsed, ev)
       .filter((r) => !r.event_name || r.event_name === ev)
@@ -297,8 +299,8 @@ export function parseDemoFile(path: string): RawDemoData {
       userName: str(r.user_name),
       attackerName: str(r.attacker_name),
       blindDuration: num(r.blind_duration),
-      x: num(r.user_X),
-      y: num(r.user_Y),
+      x: ev === "player_blind" ? num(r.user_X) : num(r.x),
+      y: ev === "player_blind" ? num(r.user_Y) : num(r.y),
     })),
   );
 
@@ -327,6 +329,49 @@ export function parseDemoFile(path: string): RawDemoData {
       balance: num(r.balance),
     }),
   );
+
+  // 击杀坐标兜底：部分 demo 的 player_death 事件不带 X/Y，但实体 tick 数据
+  // 有位置——按死亡 tick + steamid 从 parseTicks 补齐（受害者与攻击者都补）。
+  const killsNeedingCoords = kills.filter(
+    (k) => k.userSteamid && k.userX == null,
+  );
+  if (killsNeedingCoords.length) {
+    const ticksNeeded = [...new Set(killsNeedingCoords.map((k) => k.tick))];
+    const coordRows = safe(
+      () =>
+        parser.parseTicks(path, ["X", "Y"], ticksNeeded) as Record<
+          string,
+          unknown
+        >[],
+      [] as Record<string, unknown>[],
+    );
+    const rowsByTick = new Map<number, Record<string, unknown>[]>();
+    for (const row of Array.isArray(coordRows) ? coordRows : []) {
+      const t = Number(row.tick);
+      if (!Number.isNaN(t)) {
+        if (!rowsByTick.has(t)) rowsByTick.set(t, []);
+        rowsByTick.get(t)!.push(row);
+      }
+    }
+    for (const k of killsNeedingCoords) {
+      const rows = rowsByTick.get(k.tick);
+      if (!rows) continue;
+      if (k.userSteamid) {
+        const row = rows.find((r) => String(r.steamid) === k.userSteamid);
+        if (row) {
+          k.userX = num(row.X);
+          k.userY = num(row.Y);
+        }
+      }
+      if (k.attackerSteamid) {
+        const row = rows.find((r) => String(r.steamid) === k.attackerSteamid);
+        if (row) {
+          k.attackerX = num(row.X);
+          k.attackerY = num(row.Y);
+        }
+      }
+    }
+  }
 
   // 终局统计快照
   const lastTick = kills.length

@@ -755,6 +755,7 @@ export function analyzeDemo(
     utility,
     heat,
     economy,
+    evidence,
   });
 
   return { match, players, rounds, heat, utility, coach, economy, evidence };

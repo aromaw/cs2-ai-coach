@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Mark, { StaticUnderline } from "@/components/board/Mark";
 import type { LayerMode, SideMode } from "./HeatmapStage";
-import { classifyZone, ZONES } from "./zones";
+import { zonesForMap } from "./zones";
 import type { HeatPoint, Side } from "@contracts/analysis";
 
 export type PlayerScope = "all" | "ours" | "theirs" | "you";
@@ -28,6 +28,7 @@ interface ReadoutPanelProps {
   heroName: string;
   teamT: string;
   teamCT: string;
+  mapName: string;
 }
 
 export default function ReadoutPanel({
@@ -40,7 +41,9 @@ export default function ReadoutPanel({
   heroName,
   teamT,
   teamCT,
+  mapName,
 }: ReadoutPanelProps) {
+  const zones = zonesForMap(mapName);
   const layerPoints = useMemo(
     () =>
       points.filter(
@@ -57,10 +60,13 @@ export default function ReadoutPanel({
     const heroPoints = layerPoints.filter((p) => p.player === heroName);
     const base = mode === "death" || mode === "kill" ? heroPoints : layerPoints;
     const zoneRank = new Map<string, number>();
-    base.forEach((p) => {
-      const z = classifyZone(p.x, p.y).label;
-      zoneRank.set(z, (zoneRank.get(z) ?? 0) + 1);
-    });
+    if (zones) {
+      base.forEach((p) => {
+        const z =
+          zones.find((zz) => zz.test(p.x, p.y)) ?? zones[zones.length - 1];
+        zoneRank.set(z.label, (zoneRank.get(z.label) ?? 0) + 1);
+      });
+    }
     const rank = [...zoneRank.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
     const total = base.length;
     const top = rank[0];
@@ -70,12 +76,13 @@ export default function ReadoutPanel({
         ? { count: total, pct: null as number | null, zone: null as string | null }
         : { count: total, pct: topPct, zone: top?.[0] ?? null };
     return { rank, total, topPct, headline, maxCount: top?.[1] ?? 1 };
-  }, [layerPoints, mode, heroName]);
+  }, [layerPoints, mode, heroName, zones]);
 
   // 区域控制：按各区域双方击杀/首杀点位占比
   const zoneRows = useMemo(() => {
+    if (!zones) return [] as { id: string; label: string; tPct: number; ctPct: number }[];
     const kills = points.filter((p) => p.kind === "kill" || p.kind === "firstkill");
-    return ZONES.map((z) => {
+    return zones.map((z) => {
       const inZone = kills.filter((p) => z.test(p.x, p.y));
       const t = inZone.filter((p) => p.side === "T").length;
       const ct = inZone.filter((p) => p.side === "CT").length;
@@ -87,7 +94,7 @@ export default function ReadoutPanel({
         ctPct: total ? Math.round((ct / total) * 100) : 50,
       };
     });
-  }, [points]);
+  }, [points, zones]);
 
   const dominant = useMemo(() => {
     const mid = zoneRows.find((r) => r.id === "mid");
